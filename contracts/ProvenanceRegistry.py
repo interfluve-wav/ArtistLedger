@@ -261,16 +261,19 @@ def _spotify_search(name: str, spotify_token: str) -> dict:
 
 def _apple_music_search(name: str, title: str) -> tuple[str, bool]:
     """Search Apple Music. Returns (artist_id, track_present)."""
-    url = f"{APPLE_MUSIC_SEARCH_URL}?term={name}+{title}&entity=musicArtist,musicTrack&limit=1"
+    url = f"{APPLE_MUSIC_SEARCH_URL}?term={name}&entity=musicTrack&limit=5"
     data = _http_get_json(url)
     results = data.get("results", [])
     artist_id = ""
     track_present = False
     for r in results:
-        if r.get("wrapperType") == "artist" and not artist_id:
-            artist_id = str(r.get("artistId", ""))
-        if r.get("wrapperType") == "track" and not track_present:
-            track_present = True
+        if track_present:
+            break
+        if r.get("wrapperType") == "track":
+            # Guard against co-artist false matches
+            if name.lower() in r.get("artistName", "").lower():
+                track_present = True
+                artist_id = str(r.get("artistId", ""))
     return artist_id, track_present
 
 
