@@ -359,7 +359,7 @@
   <div class="src-row">
     <select id="src1-type">
       <option>Spotify</option><option>Apple Music</option><option>Bandcamp</option>
-      <option>SoundCloud</option><option>Instagram</option><option>Twitter</option>
+      <option>SoundCloud</option><option>Last.fm</option><option>Instagram</option><option>Twitter</option>
       <option>YouTube</option><option>TikTok</option><option>Tidal</option>
       <option>Facebook</option><option>website</option><option>IPI</option>
     </select>
@@ -368,7 +368,7 @@
   <div class="src-row">
     <select id="src2-type">
       <option>Bandcamp</option><option>Spotify</option><option>Apple Music</option>
-      <option>SoundCloud</option><option>Instagram</option><option>Twitter</option>
+      <option>SoundCloud</option><option>Last.fm</option><option>Instagram</option><option>Twitter</option>
       <option>YouTube</option><option>TikTok</option><option>Tidal</option>
       <option>Facebook</option><option>website</option><option>IPI</option>
     </select>
@@ -561,6 +561,12 @@
     if (kind === "instagram") return (s.match(/instagram\.com\/([\w\.]+)/) || [])[1] || "";
     if (kind === "twitter") return (s.match(/(?:twitter|x)\.com\/([\w]+)/) || [])[1] || "";
     if (kind === "youtube") return (s.match(/(?:youtube\.com\/(?:@|channel\/)|youtu\.be\/)([\w\.-]+)/) || [])[1] || "";
+    if (kind === "lastfm") {
+      // last.fm/music/<Artist> or last.fm/user/<name>; bare usernames are
+      // handled by the resolver's raw fallback for the Last.fm platform
+      const m = s.match(/last\.fm\/(?:music\/|user\/)?([^\/?#]+)/);
+      return m ? decodeURIComponent(m[1]).trim() : "";
+    }
     return s.trim();
   }
 
@@ -637,14 +643,18 @@
       };
     }
 
-    // Instagram / Twitter / YouTube / TikTok / Tidal / Facebook / website:
-    // no browser-resolvable public API — record as claimed only.
-    const h = extractID(raw, "instagram") || extractID(raw, "twitter") || extractID(raw, "youtube") || String(raw || "").trim();
+    // Instagram / Twitter / YouTube / Last.fm / TikTok / Tidal / Facebook /
+    // website: no browser-resolvable public API (Last.fm needs an API key;
+    // the on-chain VM calls it via ws.audioscrobbler.com with set_api_keys).
+    // Record as claimed; MB url-rels cross-check upgrades to confirmed.
+    const h = extractID(raw, "instagram") || extractID(raw, "twitter") || extractID(raw, "youtube") || extractID(raw, "lastfm") || String(raw || "").trim();
     return {
       platform: platform,
       handle: h,
       status: h ? "claimed" : "failed",
-      reason: "URL recorded (no browser-resolvable public API)",
+      reason: platform === "Last.fm"
+        ? "username recorded (Last.fm API needs a key — on-chain via set_api_keys)"
+        : "URL recorded (no browser-resolvable public API)",
       raw: { claimed: String(raw || "").trim() }
     };
   }
@@ -682,7 +692,7 @@
     // MusicBrainz artist + url-rels
     let mbid = "", mbName = "", mbRels = 0, mbSpotifyId = "", mbHasApple = false,
         mbHasBandcamp = false, mbHasSoundcloud = false, mbHasInstagram = false,
-        mbHasTwitter = false, mbHasYoutube = false;
+        mbHasTwitter = false, mbHasYoutube = false, mbHasLastfm = false;
     const mbres = await getJSON("https://musicbrainz.org/ws/2/artist/?query=" + encodeURIComponent("artist:" + name) + "&fmt=json&limit=1", ua(), 2);
     if (mbres && mbres.artists && mbres.artists.length) {
       mbid = mbres.artists[0].id || "";
@@ -699,6 +709,7 @@
           if (u.includes("instagram.com")) mbHasInstagram = true;
           if (u.includes("twitter.com") || u.includes("x.com")) mbHasTwitter = true;
           if (u.includes("youtube.com")) mbHasYoutube = true;
+          if (u.includes("last.fm") || u.includes("lastfm")) mbHasLastfm = true;
         }
       }
     }
@@ -722,6 +733,7 @@
       if (s.platform === "Instagram" && mbHasInstagram) { up.status = "confirmed"; up.reason = "confirmed via MusicBrainz url-rels"; return up; }
       if (s.platform === "Twitter" && mbHasTwitter) { up.status = "confirmed"; up.reason = "confirmed via MusicBrainz url-rels"; return up; }
       if (s.platform === "YouTube" && mbHasYoutube) { up.status = "confirmed"; up.reason = "confirmed via MusicBrainz url-rels"; return up; }
+      if (s.platform === "Last.fm" && mbHasLastfm) { up.status = "confirmed"; up.reason = "confirmed via MusicBrainz url-rels"; return up; }
       return s;
     }
     r1.confirmed = upgradeConfirmed(r1);
@@ -743,6 +755,7 @@
     evidence.instagram = extractID(sources[0].raw, "instagram") || extractID(sources[1] ? sources[1].raw : "", "instagram");
     evidence.twitter = extractID(sources[0].raw, "twitter") || extractID(sources[1] ? sources[1].raw : "", "twitter");
     evidence.youtube = extractID(sources[0].raw, "youtube") || extractID(sources[1] ? sources[1].raw : "", "youtube");
+    evidence.lastfm = (sources[0].platform === "Last.fm" ? extractID(sources[0].raw, "lastfm") : "") || (sources[1] && sources[1].platform === "Last.fm" ? extractID(sources[1].raw, "lastfm") : "");
     evidence.musicbrainz_id = mbid;
     if (r1.platform === "IPI") evidence.ipi_number = r1.raw.ipi;
 
@@ -900,6 +913,11 @@
     if (d.evidence.instagram) rows.push(["Instagram", d.evidence.instagram, "claimed", { handle: d.evidence.instagram }]);
     if (d.evidence.twitter) rows.push(["Twitter", d.evidence.twitter, "claimed", { handle: d.evidence.twitter }]);
     if (d.evidence.youtube) rows.push(["YouTube", d.evidence.youtube, "claimed", { channel: d.evidence.youtube }]);
+    if (d.evidence.lastfm) {
+      const lfOk = (d.r1 && d.r1.confirmed && d.r1.confirmed.platform === "Last.fm" && d.r1.confirmed.status === "confirmed") ||
+                   (d.r2 && d.r2.confirmed && d.r2.confirmed.platform === "Last.fm" && d.r2.confirmed.status === "confirmed");
+      rows.push(["Last.fm", d.evidence.lastfm, lfOk ? "confirmed (MB)" : "claimed", { user: d.evidence.lastfm }]);
+    }
     if (d.r1 && d.r1.confirmed && d.r1.confirmed.platform === "IPI") rows.push(["IPI", d.r1.confirmed.raw.ipi || d.r1.confirmed.handle, d.r1.confirmed.status === "confirmed" ? "valid" : "invalid", d.r1.confirmed.raw]);
 
     const cross = document.getElementById('cross-rows');
