@@ -101,8 +101,35 @@ class Evidence:
     # Tier 3 — qualitative (LLM judge, ±5 points)
     press_narrative_score: int          # -5 to +5
 
+    def to_dict(self) -> dict:
+        """Serialize this Evidence to a plain dict with JSON-safe values.
+
+        GenVM's `run_nondet_unsafe` passes the leader's return value to
+        validators as `gl.vm.Return.calldata`. If the wire format is a
+        JSON string, `to_json(self.__dict__)` would throw on `DynArray`
+        and `u256` values because they are not JSON-native. This method
+        explicitly converts them so the JSON form round-trips cleanly.
+        """
+        from dataclasses import asdict, is_dataclass
+        d = asdict(self) if is_dataclass(self) else dict(self.__dict__)
+        # u256 and DynArray are not JSON-native; convert to primitives.
+        for k, v in list(d.items()):
+            # DynArray exposes .items() and iteration over a JSON list.
+            if hasattr(v, "items") and callable(v.items) and not isinstance(v, (str, bytes, dict)):
+                try:
+                    d[k] = list(v)
+                except TypeError:
+                    d[k] = v
+            # u256 is a numeric subclass; cast to int.
+            elif hasattr(v, "__int__") and not isinstance(v, (bool, int, float, str, bytes)):
+                try:
+                    d[k] = int(v)
+                except (TypeError, ValueError):
+                    d[k] = v
+        return d
+
     def to_json(self) -> str:
-        return json.dumps(self.__dict__)
+        return json.dumps(self.to_dict())
 
     @staticmethod
     def empty() -> "Evidence":
@@ -182,10 +209,10 @@ def _http_get_json(url: str) -> dict:
 
 # ─── Tier 1 factor collectors ─────────────────────────────────────────────
 
-def _acoustid_lookup(audio_hash: bytes) -> tuple[bool, str]:
+def _acoustid_lookup(audio_hash: bytes, acoustid_key: str) -> tuple[bool, str]:
     """Look up the audio hash in AcoustID. Returns (matched, recording_mbid)."""
     url = (
-        f"{ACOUSTID_URL}?client={_acoustid_api_key()}"
+        f"{ACOUSTID_URL}?client={acoustid_key}"
         f"&duration=0&fingerprint={audio_hash.hex()}&meta=recordings+releaseids"
     )
     data = _http_get_json(url)
@@ -197,11 +224,6 @@ def _acoustid_lookup(audio_hash: bytes) -> tuple[bool, str]:
     except Exception:
         pass
     return False, ""
-
-
-def _acoustid_api_key() -> str:
-    """Read the AcoustID API key from contract storage. Default empty for tests."""
-    return ""  # In production, set via contract init or env
 
 
 def _musicbrainz_isrc(recording_id: str) -> DynArray[str]:
@@ -224,9 +246,9 @@ def _musicbrainz_artist(name: str) -> dict:
     return artists[0] if artists else {}
 
 
-def _spotify_search(name: str) -> dict:
+def _spotify_search(name: str, spotify_token: str) -> dict:
     """Search Spotify for an artist. Returns top match or {}."""
-    headers = {"Authorization": f"Bearer {_spotify_token()}"}
+    headers = {"Authorization": f"Bearer {spotify_token}"}
     url = f"{SPOTIFY_SEARCH_URL}?q=artist:{name}&type=artist&limit=1"
     try:
         resp = gl.nondet.web.get(url, headers=headers)
@@ -235,11 +257,6 @@ def _spotify_search(name: str) -> dict:
         return items[0] if items else {}
     except Exception:
         return {}
-
-
-def _spotify_token() -> str:
-    """Read the Spotify OAuth token from contract storage."""
-    return ""  # In production, refresh via client_credentials flow
 
 
 def _apple_music_search(name: str, title: str) -> tuple[str, bool]:
@@ -303,13 +320,13 @@ def _instagram_check(handle: str) -> str:
         return ""
 
 
-def _lastfm_scrobbles(artist: str, lastfm_user: str) -> int:
+def _lastfm_scrobbles(artist: str, lastfm_user: str, lastfm_key: str) -> int:
     """Return scrobble count for an artist in a Last.fm user's history."""
     if not lastfm_user or not artist:
         return 0
-    api_key = _lastfm_api_key()
-    if not api_key:
+    if not lastfm_key:
         return 0
+    api_key = lastfm_key
     url = (
         f"https://ws.audioscrobbler.com/2.0/?method=artist.getInfo"
         f"&artist={artist}&username={lastfm_user}&api_key={api_key}&format=json"
@@ -321,22 +338,20 @@ def _lastfm_scrobbles(artist: str, lastfm_user: str) -> int:
         return 0
 
 
-def _lastfm_api_key() -> str:
-    return ""  # In production, set via contract init
-
-
 # ─── Tier 5 (wallet-derived) ──────────────────────────────────────────────
 
-def _wallet_age_days(wallet: str) -> int:
+def _wallet_age_days(wallet: str, etherscan_key: str) -> int:
     """Compute wallet age in days via Etherscan.
 
     Returns the number of whole days between the wallet's first on-chain
     transaction and the current transaction's timestamp. Uses
     `gl.message_raw['datetime']` (consensus-safe) for the "now" side.
+    If `etherscan_key` is empty, returns 0 (no signal) so the wallet-age
+    factor never auto-passes the 90-day threshold.
     """
-    if not wallet:
+    if not wallet or not etherscan_key:
         return 0
-    api_key = _etherscan_api_key()
+    api_key = etherscan_key
     url = (
         f"{ETHERSCAN_TX_URL}?module=account&action=txlist&address={wallet}"
         f"&startblock=0&endblock=99999999&sort=asc&apikey={api_key}"
@@ -353,10 +368,6 @@ def _wallet_age_days(wallet: str) -> int:
         return (now - ts) // 86400
     except Exception:
         return 0
-
-
-def _etherscan_api_key() -> str:
-    return ""  # In production, set via contract init
 
 
 def _ens_data(wallet: str) -> tuple[str, bool]:
@@ -472,6 +483,14 @@ class ProvenanceRegistry(gl.Contract):
     identity_count: TreeMap[Address, u256]
     artist_releases: TreeMap[Address, DynArray[bytes]]
 
+    # API credentials. Set by `set_api_keys` before the first
+    # `register_artist` call. All four are read inside `run_nondet_unsafe`
+    # by the leader, then passed to the module-level API helpers.
+    acoustid_key: str
+    spotify_token: str
+    lastfm_key: str
+    etherscan_key: str
+
     def _now(self) -> int:
         """Consensus-safe transaction timestamp (unix seconds).
 
@@ -486,6 +505,31 @@ class ProvenanceRegistry(gl.Contract):
     def _sender(self) -> Address:
         """Caller wallet address, exposed by GenVM."""
         return gl.message.sender_address
+
+    @gl.public.write
+    def set_api_keys(
+        self,
+        acoustid_key: str,
+        spotify_token: str,
+        lastfm_key: str,
+        etherscan_key: str,
+    ) -> str:
+        """Set the upstream API credentials used by `register_artist`.
+
+        This is unguarded for testnet simplicity. For production, gate it
+        behind a stored admin address and only allow the deployer to
+        call it. The keys are read inside `run_nondet_unsafe` by the
+        leader, so all four must be set before the first
+        `register_artist` call.
+
+        Pass empty strings for keys you don't have; the corresponding
+        evidence field will then return its default (no signal).
+        """
+        self.acoustid_key = acoustid_key
+        self.spotify_token = spotify_token
+        self.lastfm_key = lastfm_key
+        self.etherscan_key = etherscan_key
+        return "API keys set"
 
     # ─── Identity verification ─────────────────────────────────────────────
 
@@ -506,17 +550,26 @@ class ProvenanceRegistry(gl.Contract):
         score reaches 70.
         """
         def leader_collect() -> Evidence:
+            # Read API credentials from contract storage once. Inside
+            # run_nondet_unsafe, all validators see the same stored
+            # values, so passing them to the helpers keeps the consensus
+            # path consistent.
+            acoustid_key = self.acoustid_key
+            spotify_token = self.spotify_token
+            lastfm_key = self.lastfm_key
+            etherscan_key = self.etherscan_key
+
             ev = Evidence.empty()
 
             # Tier 1
-            matched, mbid = _acoustid_lookup(audio_hash)
+            matched, mbid = _acoustid_lookup(audio_hash, acoustid_key)
             ev.acoustid_matched = matched
             ev.acoustid_recording_mbid = mbid
             isrcs = _musicbrainz_isrc(mbid)
             for code in isrcs:
                 ev.isrc_codes.append(code)
 
-            sp = _spotify_search(name)
+            sp = _spotify_search(name, spotify_token)
             if sp:
                 ev.spotify_artist_id = sp.get("id", "")
                 ev.spotify_verified = bool(sp.get("verified", False))
@@ -537,11 +590,11 @@ class ProvenanceRegistry(gl.Contract):
             )
             ev.instagram_handle = _instagram_check(source_urls.get("instagram", ""))
             ev.lastfm_scrobble_count = _lastfm_scrobbles(
-                name, source_urls.get("lastfm", "")
+                name, source_urls.get("lastfm", ""), lastfm_key
             )
 
             # Tier 5
-            ev.wallet_age_days = _wallet_age_days(wallet)
+            ev.wallet_age_days = _wallet_age_days(wallet, etherscan_key)
             ens_name, _ = _ens_data(wallet)
             ev.ens_name = ens_name
             ev.ens_matches_artist = _name_token_overlap(ens_name, name) >= 0.5

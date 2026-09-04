@@ -4,65 +4,22 @@ This document tracks the work that needs to land before the contract is
 usable on testnet for real artist registrations. Items are ordered by
 expected impact on verification correctness.
 
+## Done in v0.3.3
+
+- **API key admin setter.** Added 4 storage fields
+  (`acoustid_key`, `spotify_token`, `lastfm_key`, `etherscan_key`) and
+  a `@gl.public.write set_api_keys(...)` admin method. The four
+  module-level helpers now take their key as a parameter. Unguarded
+  for testnet; production needs an admin-address gate.
+- **Explicit `Evidence.to_dict()` for validator calldata round-trip.**
+  Added an explicit `to_dict()` method that converts `DynArray` to
+  `list` and `u256` to `int`. `to_json` now routes through `to_dict`,
+  so the validator's `json.loads(leader_result.calldata)` path works
+  for any JSON-string wire format.
+
 ## Required before testnet deploy
 
-### 1. Explicit `Evidence.to_dict()` for validator calldata round-trip
-
-**Where:** `contracts/ProvenanceRegistry.py:808-841` (the
-`_score_evidence_from_dict` function and the implicit `to_json` path
-in `Evidence.to_json`).
-
-**Risk:** The leader's `Evidence` return is serialized by GenVM into
-`gl.vm.Return.calldata` and the validator re-parses it. The current
-`Evidence.to_json` does `json.dumps(self.__dict__)`, which will throw
-on `DynArray` and `u256` values. If GenVM calls our `to_json` literally,
-the validator rejects every leader return and every `register_artist`
-fails.
-
-**Fix:** Add an explicit `Evidence.to_dict()` that converts
-`DynArray[T]` to `list` and `u256` to `int` before serialization. Have
-the validator call `to_dict()` on both sides (or define a module-level
-`_evidence_from_dict` that calls it). Keep `to_json` for the onchain
-audit log where the human-readable form is fine.
-
-**Estimated size:** 1 method + 1 helper. ~15 lines.
-
-### 2. API key admin setter
-
-**Where:** `contracts/ProvenanceRegistry.py` — `_acoustid_api_key`,
-`_spotify_token`, `_lastfm_api_key`, `_etherscan_api_key` all return
-`""` with no way to set them.
-
-**Risk:** Without a key, every API returns 401/403. Every
-`register_artist` returns `"Not verified (X)"` where X is whatever
-the LLM can synthesize from empty evidence. Contract is undeployable
-in any meaningful sense.
-
-**Fix:** Add a `@gl.public.write` admin method that stores the four
-keys in contract storage:
-
-```python
-@gl.public.write
-def set_api_keys(
-    self,
-    acoustid_key: str,
-    spotify_token: str,
-    lastfm_key: str,
-    etherscan_key: str,
-) -> str:
-    self.acoustid_key = acoustid_key
-    self.spotify_token = spotify_token
-    self.lastfm_key = lastfm_key
-    self.etherscan_key = etherscan_key
-    return "API keys set"
-```
-
-Add the four storage fields to the `ProvenanceRegistry` class. The
-admin caller's wallet should be checked against a stored admin
-address (set at deploy time). For testnet, an unguarded setter is
-fine.
-
-**Estimated size:** ~25 lines + storage field declarations.
+*(none — the two required items have landed in v0.3.3)*
 
 ## Required before broad release (not blocking testnet)
 

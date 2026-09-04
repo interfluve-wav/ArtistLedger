@@ -6,18 +6,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Known issues (documented, not yet fixed)
+### Fixed (v0.3.3)
 
-- **API key accessors all return `""`.** `_acoustid_api_key`,
-  `_spotify_token`, `_etherscan_api_key`, `_lastfm_api_key` have no
-  initializer or setter exposed on the contract. Every real-artist
-  `register_artist` call will currently fail verification because
-  AcoustID, Spotify, and Etherscan will return 401/403. Needs a
-  `@gl.public.write` admin setter or a deployment-time env-reader before
-  the contract is usable on testnet.
-- **Docstring headers** in `contracts/ProvenanceRegistry.py` (line 3)
-  and `tests/test_provenance.py` (line 2) still say `v0.2.0`. Cosmetic
-  but visible to reviewers.
+- **`Evidence.to_json` would throw on `DynArray` and `u256` values** because
+  `json.dumps(self.__dict__)` is not JSON-native for those types. Added
+  an explicit `Evidence.to_dict()` that converts `DynArray` to `list`
+  and `u256` to `int`, and have `to_json` route through it. The
+  validator's `json.loads(leader_result.calldata)` path now works
+  for any JSON-string wire format.
+- **API key accessors returned `""` with no way to configure them.**
+  Added four storage fields on `ProvenanceRegistry`
+  (`acoustid_key`, `spotify_token`, `lastfm_key`, `etherscan_key`) and
+  a `@gl.public.write set_api_keys(...)` admin method. The four
+  module-level API helpers (`_acoustid_lookup`, `_spotify_search`,
+  `_lastfm_scrobbles`, `_wallet_age_days`) now take their key as a
+  parameter; `register_artist.leader_collect` reads the keys from
+  contract storage once at the top and threads them through. The
+  dead module-level `_acoustid_api_key` / `_spotify_token` /
+  `_lastfm_api_key` / `_etherscan_api_key` functions have been
+  removed.
+
+### Known issues (still open)
+
 - **Farcaster endpoint.** The contract calls
   `https://api.farcaster.xyz/v2/user-by-cast-address` which is not a
   public Farcaster Hub path. Real Hub endpoints are on
@@ -37,14 +47,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   APIs. They will break the moment any of these sites change their
   HTML structure. The contract parses bio/location/follower fields
   out of the page body, which is fragile.
-- **`Evidence` serialization through `run_nondet_unsafe`.** The leader
-  returns an `Evidence` dataclass from inside `run_nondet_unsafe`;
-  the validator receives the result as `gl.vm.Return.calldata` and
-  re-parses it via `_score_evidence_from_dict`. Whether GenVM
-  serializes `@allow_storage @dataclass` instances through
-  `to_json(self.__dict__)` (which will throw on `DynArray` and `u256`)
-  or via a structured wire format is undocumented in the v0.2.9 SDK
-  reference and only verifiable on a live testnet deploy.
+- **Docstring headers** in `contracts/ProvenanceRegistry.py` (line 3)
+  and `tests/test_provenance.py` (line 2) still say `v0.2.0`. Cosmetic
+  but visible to reviewers.
+
+## [0.3.3] - 2026-09-04
+
+See the [Unreleased](#unreleased) section above for the two fixes in
+this release: `Evidence.to_dict()` for validator calldata round-trip
+and the `set_api_keys` admin method.
 
 ## [0.3.2] - 2026-09-04
 
