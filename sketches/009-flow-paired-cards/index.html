@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flow — Paired (form + cert, both always visible)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1a1814;
+    --paper: #f7f3ec;
+    --rule: #d8d2c5;
+    --rule-soft: #ebe6da;
+    --accent: #8a3a1f;
+    --muted: #6b655a;
+    --ok: #2f5d3a;
+    --warn: #8a5a1f;
+    --err: #8a3a1f;
+    --code-bg: #f0ebde;
+    --bg: #fafaf7;
+  }
+  body {
+    font-family: "Iowan Old Style", "Apple Garamond", Garamond, "Times New Roman", serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 24px; background: white; border-bottom: 1px solid var(--rule);
+  }
+  .logo { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .logo-dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; }
+  .header-meta { display: flex; gap: 14px; font-size: 11px; color: var(--muted); }
+  .header-meta b { color: var(--ink); font-weight: 500; }
+
+  /* split layout */
+  .split {
+    display: grid; grid-template-columns: 380px 1fr;
+    height: calc(100vh - 47px);
+  }
+
+  /* ═══ LEFT: form, compact, scrollable ═══ */
+  .form-pane {
+    background: white; border-right: 1px solid var(--rule);
+    padding: 24px 22px; overflow-y: auto;
+  }
+  .form-step {
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
+  }
+  .form-pane h1 {
+    font-size: 20px; font-weight: 400; margin-bottom: 4px; letter-spacing: -0.01em;
+  }
+  .form-pane .sub { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+  .form-pane .field { margin-bottom: 12px; }
+  .form-pane .field label {
+    display: block; font-size: 11px; color: var(--muted);
+    margin-bottom: 3px; font-weight: 500;
+  }
+  .form-pane .field input, .form-pane .field select {
+    width: 100%; padding: 7px 10px; border: 1px solid var(--rule);
+    border-radius: 4px; font-family: inherit; font-size: 13px;
+    background: white; color: var(--ink); transition: border-color 0.15s;
+  }
+  .form-pane .field input:focus, .form-pane .field select:focus {
+    border-color: var(--accent); outline: 2px solid var(--code-bg);
+  }
+  .form-pane .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .form-pane .rule { border: none; border-top: 1px solid var(--rule-soft); margin: 18px 0; }
+  .form-pane .section-h {
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 8px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .form-pane .section-h .badge {
+    font-size: 9px; letter-spacing: 0.06em; text-transform: none;
+    color: var(--ok); font-weight: 500;
+  }
+  .form-pane .src-row {
+    display: grid; grid-template-columns: 110px 1fr;
+    gap: 6px; margin-bottom: 6px;
+  }
+  .form-pane .src-row select, .form-pane .src-row input {
+    padding: 6px 8px; font-size: 12px;
+  }
+
+  .form-pane .actions {
+    display: flex; gap: 8px; margin-top: 16px;
+  }
+  .form-pane .btn {
+    padding: 8px 14px; font-family: inherit; font-size: 12px;
+    background: var(--ink); color: white;
+    border: 1px solid var(--ink); border-radius: 4px; cursor: pointer;
+  }
+  .form-pane .btn.ghost { background: transparent; color: var(--ink); }
+  .form-pane .btn:hover { opacity: 0.9; }
+
+  .live-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(47,93,58,0.1); color: var(--ok);
+    font-size: 10px; padding: 2px 8px; border-radius: 10px;
+    margin-left: 8px;
+  }
+  .live-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--ok); animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  /* ═══ RIGHT: certificate, scrollable ═══ */
+  .cert-pane {
+    background: var(--paper); overflow-y: auto;
+    padding: 48px 24px 80px;
+  }
+  .cert {
+    max-width: 640px; margin: 0 auto;
+  }
+  .cert .crest {
+    text-align: center; font-size: 10px; letter-spacing: 0.32em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+  }
+  .cert h1.name {
+    font-size: 32px; font-weight: 400; line-height: 1.15;
+    text-align: center; margin-bottom: 6px; letter-spacing: -0.01em;
+  }
+  .cert .subtitle {
+    text-align: center; font-style: italic; color: var(--muted); margin-bottom: 32px; font-size: 13px;
+  }
+  .cert .seal {
+    width: 56px; height: 56px; border: 1.5px solid var(--ink); border-radius: 50%;
+    margin: 0 auto 28px; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; letter-spacing: 0.2em; color: var(--muted);
+  }
+  .cert .field {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 10px 0; border-bottom: 1px solid var(--rule);
+    font-size: 13px;
+  }
+  .cert .field-label { color: var(--muted); }
+  .cert .field-value.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+  .cert .rule { border: none; border-top: 1px solid var(--rule); margin: 24px 0; }
+  .cert .section-label {
+    font-size: 9px; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 2px;
+  }
+  .cert .row {
+    border-bottom: 1px solid var(--rule-soft);
+    padding: 9px 0; display: grid; grid-template-columns: 100px 1fr 70px;
+    gap: 10px; align-items: baseline; font-size: 12.5px;
+  }
+  .cert .row .lbl {
+    font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
+  }
+  .cert .row .v { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
+  .cert .row .verdict { font-size: 10px; color: var(--ok); text-align: right; font-style: italic; }
+  .cert .row .verdict.warn { color: var(--warn); }
+  .cert .row .verdict.err { color: var(--err); }
+  .cert .score { text-align: center; margin: 32px 0 18px; }
+  .cert .score-num { font-size: 56px; line-height: 1; font-weight: 400; }
+  .cert .score-num .denom { color: var(--muted); font-size: 24px; }
+  .cert .score-label {
+    font-size: 9px; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--muted); margin-top: 6px;
+  }
+
+  .cert .actions {
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 24px;
+  }
+  .cert .btn {
+    padding: 9px 16px; font-family: inherit; font-size: 11px;
+    letter-spacing: 0.05em; border-radius: 0;
+  }
+  .cert .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
+  .cert .btn.link { background: transparent; color: var(--muted); border: 1px solid var(--rule); }
+  .cert .btn-sep { width: 1px; height: 20px; background: var(--rule); margin: 0 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    ProvenanceRegistry · register_artist
+    <span class="live-tag"><div class="live-dot"></div>live</span>
+  </div>
+  <div class="header-meta">
+    <span>net <b>testnet</b></span>
+    <span>contract <b>0x7a3f…e9c1</b></span>
+  </div>
+</header>
+
+<div class="split">
+
+  <!-- ═══ LEFT: form ═══ -->
+  <div class="form-pane">
+    <div class="form-step">edit claim</div>
+    <h1>Register an artist</h1>
+    <p class="sub">Edits update the certificate live. No submit button.</p>
+
+    <div class="field">
+      <label>Artist name</label>
+      <input value="Skee Mask" />
+    </div>
+    <div class="field">
+      <label>Display name</label>
+      <input value="Ilian Skugor" />
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Wallet</label>
+        <input value="0x8a5a…f7e2" style="font-family: monospace; font-size: 12px;" />
+      </div>
+      <div class="field">
+        <label>IPI</label>
+        <input value="00479499931" style="font-family: monospace; font-size: 12px;" />
+      </div>
+    </div>
+
+    <hr class="rule">
+
+    <div class="section-h">
+      <span>Two-source verification</span>
+      <span class="badge">2 / 2</span>
+    </div>
+    <div class="src-row">
+      <select>
+        <option>Spotify</option><option>Apple Music</option><option>Bandcamp</option>
+        <option>SoundCloud</option><option>Instagram</option><option>Twitter</option>
+        <option>YouTube</option><option>TikTok</option><option>Tidal</option>
+        <option>Facebook</option><option>website</option><option>IPI</option>
+      </select>
+      <input value="open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ" />
+    </div>
+    <div class="src-row">
+      <select>
+        <option>Bandcamp</option><option>Spotify</option><option>Apple Music</option>
+        <option>SoundCloud</option><option>Instagram</option><option>Twitter</option>
+        <option>YouTube</option><option>TikTok</option><option>Tidal</option>
+        <option>Facebook</option><option>website</option><option>IPI</option>
+      </select>
+      <input value="ilian-tape.bandcamp.com" />
+    </div>
+
+    <div class="actions">
+      <button class="btn ghost">Reset</button>
+      <button class="btn">Export JSON</button>
+    </div>
+  </div>
+
+  <!-- ═══ RIGHT: certificate, always visible ═══ -->
+  <div class="cert-pane">
+    <div class="cert">
+      <div class="crest">Provenance Registry · On-Chain Attestation</div>
+      <h1 class="name">Ilian Skugor</h1>
+      <div class="subtitle">performing as <em>Skee Mask</em> · Munich</div>
+
+      <div class="seal">VRFD</div>
+
+      <div class="field"><span class="field-label">Wallet</span><span class="field-value mono">0x8a5a…f7e2</span></div>
+      <div class="field"><span class="field-label">Handle</span><span class="field-value mono">skeemask</span></div>
+      <div class="field"><span class="field-label">Registered</span><span class="field-value">2026-09-04 · 14:22 UTC</span></div>
+      <div class="field"><span class="field-label">Block</span><span class="field-value mono">#1,884,221</span></div>
+
+      <hr class="rule">
+
+      <div class="section-label">Two-Source Verification · 2 / 2 matched</div>
+      <div class="row"><span class="lbl">Source I</span><span class="v">open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ</span><span class="verdict">✓ match</span></div>
+      <div class="row"><span class="lbl">Source II</span><span class="v">ilian-tape.bandcamp.com</span><span class="verdict">✓ match</span></div>
+
+      <hr class="rule">
+
+      <div class="section-label">Public-Data Cross-Reference · 5 hit, 1 fail, 7 not checked</div>
+      <div class="row"><span class="lbl">Spotify</span><span class="v">2qwi0hBvI2GrbkurOnw3hZ</span><span class="verdict">match</span></div>
+      <div class="row"><span class="lbl">Apple Music</span><span class="v">930597571</span><span class="verdict">track</span></div>
+      <div class="row"><span class="lbl">Bandcamp</span><span class="v">ilian-tape.bandcamp.com</span><span class="verdict">match</span></div>
+      <div class="row"><span class="lbl">SoundCloud</span><span class="v">skee-mask</span><span class="verdict">profile</span></div>
+      <div class="row"><span class="lbl">Instagram</span><span class="v">—</span><span class="verdict warn">not checked</span></div>
+      <div class="row"><span class="lbl">Twitter</span><span class="v">@sk33mask</span><span class="verdict err">404</span></div>
+      <div class="row"><span class="lbl">YouTube</span><span class="v">—</span><span class="verdict warn">not checked</span></div>
+      <div class="row"><span class="lbl">TikTok</span><span class="v">—</span><span class="verdict warn">not checked</span></div>
+      <div class="row"><span class="lbl">Tidal</span><span class="v">—</span><span class="verdict warn">not checked</span></div>
+      <div class="row"><span class="lbl">Facebook</span><span class="v">—</span><span class="verdict warn">not checked</span></div>
+      <div class="row"><span class="lbl">MusicBrainz</span><span class="v">2b3e25…10cd2</span><span class="verdict">18 rels</span></div>
+      <div class="row"><span class="lbl">Discogs</span><span class="v">4039564</span><span class="verdict">4 urls</span></div>
+      <div class="row"><span class="lbl">IPI</span><span class="v">00479499931</span><span class="verdict">valid</span></div>
+
+      <div class="score"><div class="score-num">94<span class="denom">/100</span></div><div class="score-label">Verification Score</div></div>
+
+      <div class="actions">
+        <button class="btn ghost">Anchor release</button>
+        <span class="btn-sep"></span>
+        <button class="btn link">View raw evidence</button>
+        <button class="btn link">View on Etherscan ↗</button>
+        <span class="btn-sep"></span>
+        <button class="btn link" style="color: var(--err);">File dispute</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

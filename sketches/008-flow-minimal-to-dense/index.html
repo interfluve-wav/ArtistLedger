@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flow — Minimal → expand (calm by default)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1a1814;
+    --paper: #f7f3ec;
+    --rule: #d8d2c5;
+    --rule-soft: #ebe6da;
+    --accent: #8a3a1f;
+    --muted: #6b655a;
+    --ok: #2f5d3a;
+    --warn: #8a5a1f;
+    --err: #8a3a1f;
+    --code-bg: #f0ebde;
+  }
+  body {
+    font-family: "Iowan Old Style", "Apple Garamond", Garamond, "Times New Roman", serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 740px; margin: 0 auto; padding: 72px 48px 100px; }
+  .crest { text-align: center; font-size: 11px; letter-spacing: 0.32em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; }
+  h1 { font-size: 38px; font-weight: 400; line-height: 1.15; text-align: center; margin-bottom: 8px; letter-spacing: -0.01em; }
+  .subtitle { text-align: center; font-style: italic; color: var(--muted); margin-bottom: 48px; }
+  .seal {
+    width: 64px; height: 64px; border: 1.5px solid var(--ink); border-radius: 50%;
+    margin: 0 auto 40px; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; letter-spacing: 0.2em; color: var(--muted);
+  }
+  .field {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 14px 0; border-bottom: 1px solid var(--rule);
+    font-size: 14px;
+  }
+  .field-label { color: var(--muted); }
+  .field-value.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+  .rule { border: none; border-top: 1px solid var(--rule); margin: 32px 0; }
+  .section-label {
+    font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .section-label .meta { color: var(--muted); font-size: 10px; letter-spacing: 0.1em; font-weight: normal; text-transform: none; }
+
+  /* Expandable evidence rows */
+  details { border-bottom: 1px solid var(--rule-soft); }
+  summary {
+    list-style: none; cursor: pointer;
+    padding: 14px 0;
+    display: grid; grid-template-columns: 120px 1fr 80px 16px;
+    gap: 12px; align-items: baseline;
+    font-size: 14px; color: var(--ink);
+    transition: color 0.15s;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary:hover { color: var(--accent); }
+  summary:focus { outline: none; }
+  summary .label { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+  summary .label:hover { color: var(--accent); }
+  summary .handle { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+  summary .verdict { font-size: 11px; color: var(--ok); text-align: right; font-style: italic; }
+  summary .verdict.warn { color: var(--warn); }
+  summary .verdict.err { color: var(--err); }
+  summary .caret { color: var(--muted); font-size: 11px; transition: transform 0.15s; text-align: right; }
+  details[open] summary .caret { transform: rotate(90deg); color: var(--accent); }
+  details[open] summary .label { color: var(--accent); }
+
+  .raw {
+    padding: 12px 14px; margin: 0 0 14px 0;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px; line-height: 1.6;
+    color: var(--ink); background: var(--code-bg);
+    border-left: 2px solid var(--accent);
+    white-space: pre; overflow-x: auto;
+  }
+  .raw .k { color: var(--accent); }
+  .raw .s { color: var(--ok); }
+  .raw .n { color: #5a3e1f; }
+  .raw .b { color: #1f4a5a; }
+
+  .score { text-align: center; margin: 48px 0 28px; }
+  .score-num { font-size: 72px; line-height: 1; font-weight: 400; }
+  .score-num .denom { color: var(--muted); font-size: 32px; }
+  .score-label { font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
+
+  .breakdown {
+    display: grid; grid-template-columns: 1fr 60px;
+    gap: 6px 24px; font-size: 13px; margin: 20px 0;
+  }
+  .breakdown .lbl { color: var(--muted); }
+  .breakdown .val { text-align: right; color: var(--ink); }
+  .breakdown .val.add { color: var(--ok); }
+  .breakdown .val.neg { color: var(--err); }
+
+  .actions {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    justify-content: center; align-items: center; margin-top: 40px;
+  }
+  .btn {
+    padding: 11px 22px; font-family: inherit; font-size: 12px;
+    letter-spacing: 0.06em; background: var(--ink); color: var(--paper);
+    border: 1px solid var(--ink); cursor: pointer;
+  }
+  .btn.ghost { background: transparent; color: var(--ink); }
+  .btn.link { background: transparent; color: var(--muted); border-color: var(--rule); }
+  .btn.warn { background: transparent; color: var(--err); border-color: var(--rule); }
+  .btn:hover { opacity: 0.85; }
+  .btn.link:hover { color: var(--ink); border-color: var(--ink); }
+  .btn.warn:hover { border-color: var(--err); }
+  .btn-sep { width: 1px; height: 24px; background: var(--rule); margin: 0 4px; }
+  .hint { text-align: center; font-size: 11px; color: var(--muted); font-style: italic; margin-top: 8px; }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(26, 24, 20, 0.65);
+    backdrop-filter: blur(2px);
+    display: none; align-items: flex-start; justify-content: center;
+    padding: 40px 16px; overflow-y: auto; z-index: 100;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--paper); width: 100%; max-width: 920px;
+    border: 1px solid var(--ink);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  }
+  .modal-head {
+    padding: 18px 28px; border-bottom: 1px solid var(--rule);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal-head h2 { font-size: 16px; font-weight: 400; letter-spacing: 0.02em; }
+  .modal-head h2 em { color: var(--muted); font-style: normal; font-size: 12px; letter-spacing: 0.1em; margin-left: 8px; }
+  .modal-close {
+    background: none; border: 1px solid var(--rule); color: var(--muted);
+    font-family: inherit; font-size: 11px; letter-spacing: 0.1em;
+    padding: 4px 12px; cursor: pointer;
+  }
+  .modal-close:hover { color: var(--ink); border-color: var(--ink); }
+  .modal-tabs {
+    display: flex; border-bottom: 1px solid var(--rule); background: var(--code-bg);
+  }
+  .modal-tab {
+    padding: 10px 18px; font-size: 11px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted);
+    border-right: 1px solid var(--rule); cursor: pointer;
+    background: transparent; border-top: none; border-bottom: none; border-left: none;
+    font-family: inherit;
+  }
+  .modal-tab.active { color: var(--ink); background: var(--paper); border-top: 2px solid var(--accent); padding-top: 8px; }
+  .modal-body { padding: 24px 28px 28px; max-height: 60vh; overflow-y: auto; }
+  .modal-panel { display: none; }
+  .modal-panel.active { display: block; }
+  pre.json {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.6;
+    white-space: pre-wrap; word-break: break-word;
+    background: var(--code-bg); padding: 16px 18px;
+    border-left: 2px solid var(--accent);
+  }
+  pre.json .k { color: var(--accent); }
+  pre.json .s { color: var(--ok); }
+  pre.json .n { color: #5a3e1f; }
+  pre.json .b { color: #1f4a5a; }
+  pre.json .c { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="crest">Provenance Registry · On-Chain Attestation</div>
+  <h1>Ilian Skugor</h1>
+  <div class="subtitle">performing as <em>Skee Mask</em> · Munich</div>
+
+  <div class="seal">VRFD</div>
+
+  <div class="field"><span class="field-label">Wallet</span><span class="field-value mono">0x8a5a…f7e2</span></div>
+  <div class="field"><span class="field-label">Handle</span><span class="field-value mono">skeemask</span></div>
+  <div class="field"><span class="field-label">Registered</span><span class="field-value">2026-09-04 · 14:22 UTC</span></div>
+  <div class="field"><span class="field-label">Block</span><span class="field-value mono">#1,884,221</span></div>
+
+  <hr class="rule">
+
+  <div class="section-label">
+    <span>Two-Source Verification</span>
+    <span class="meta">2 / 2 matched · click any row</span>
+  </div>
+
+  <details>
+    <summary>
+      <span class="label">Source I</span>
+      <span class="handle">open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ</span>
+      <span class="verdict">✓ match</span>
+      <span class="caret">▶</span>
+    </summary>
+    <div class="raw"><span class="k">"id"</span>: <span class="s">"2qwi0hBvI2GrbkurOnw3hZ"</span>,
+<span class="k">"name"</span>: <span class="s">"Skee Mask"</span>,
+<span class="k">"popularity"</span>: <span class="n">78</span>,
+<span class="k">"follower_count"</span>: <span class="n">47210</span>,
+<span class="k">"genres"</span>: [<span class="s">"electronic"</span>, <span class="s">"techno"</span>, <span class="s">"idm"</span>],
+<span class="k">"external_urls"</span>: {<span class="k">"spotify"</span>: <span class="s">"https://..."</span>}}</div>
+  </details>
+
+  <details>
+    <summary>
+      <span class="label">Source II</span>
+      <span class="handle">ilian-tape.bandcamp.com</span>
+      <span class="verdict">✓ match</span>
+      <span class="caret">▶</span>
+    </summary>
+    <div class="raw"><span class="k">"band_id"</span>: <span class="n">48201</span>,
+<span class="k">"name"</span>: <span class="s">"Ilian Tape"</span>,
+<span class="k">"releases_count"</span>: <span class="n">14</span>,
+<span class="k">"verified"</span>: <span class="b">true</span>}</div>
+  </details>
+
+  <div class="section-label" style="margin-top: 24px;">
+    <span>Public-Data Cross-Reference</span>
+    <span class="meta">5 hit, 1 fail, 7 not checked · click to inspect</span>
+  </div>
+
+  <details>
+    <summary>
+      <span class="label">Spotify</span><span class="handle">2qwi0hBvI2GrbkurOnw3hZ</span>
+      <span class="verdict">match</span><span class="caret">▶</span>
+    </summary>
+    <div class="raw"><span class="c">// raw leader.run_nondet_unsafe output (Spotify)</span>
+{ <span class="k">"id"</span>: <span class="s">"2qwi0hBvI2GrbkurOnw3hZ"</span>, <span class="k">"name"</span>: <span class="s">"Skee Mask"</span>,
+  <span class="k">"popularity"</span>: <span class="n">78</span>, <span class="k">"follower_count"</span>: <span class="n">47210</span> }</div>
+  </details>
+
+  <details>
+    <summary>
+      <span class="label">Apple Music</span><span class="handle">930597571</span>
+      <span class="verdict">track</span><span class="caret">▶</span>
+    </summary>
+    <div class="raw">{ <span class="k">"wrapperType"</span>: <span class="s">"track"</span>, <span class="k">"artistId"</span>: <span class="n">930597571</span>,
+  <span class="k">"artistName"</span>: <span class="s">"Skee Mask"</span>, <span class="k">"trackName"</span>: <span class="s">"Compro"</span> }</div>
+  </details>
+
+  <details>
+    <summary>
+      <span class="label">Bandcamp</span><span class="handle">ilian-tape.bandcamp.com</span>
+      <span class="verdict">match</span><span class="caret">▶</span>
+    </summary>
+    <div class="raw">{ <span class="k">"name"</span>: <span class="s">"Ilian Tape"</span>, <span class="k">"releases_count"</span>: <span class="n">14</span>,
+  <span class="k">"verified"</span>: <span class="b">true</span> }</div>
+  </details>
+
+  <details>
+    <summary>
+      <span class="label">SoundCloud</span><span class="handle">skee-mask</span>
+      <span class="verdict">profile</span><span class="caret">▶</span>
+    </summary>
+    <div class="raw">{ <span class="k">"handle"</span>: <span class="s">"skee-mask"</span>, <span class="k">"exists"</span>: <span class="b">true</span> }</div>
+  </details>
+
+  <details>
+    <summary>
+      <span class="label">Twitter</span><span class="handle">@sk33mask</span>
+      <span class="verdict err">404</span><span class="caret">▶</span>
+    </summary>
+    <div class="raw">{ <span class="k">"handle"</span>: <span class="s">"@sk33mask"</span>, <span class="k">"exists"</span>: <span class="b">false</span>,
+  <span class="k">"status"</span>: <span class="n">404</span>, <span class="k">"note"</span>: <span class="s">"claimed by user, page not found"</span> }</div>
+  </details>
+
+  <details>
+    <summary>
+      <span class="label">MusicBrainz</span><span class="handle">2b3e25…10cd2</span>
+      <span class="verdict">18 rels</span><span class="caret">▶</span>
+    </summary>
+    <div class="raw">{ <span class="k">"id"</span>: <span class="s">"2b3e25ba-983e-44ac-9def-907e03910cd2"</span>,
+  <span class="k">"name"</span>: <span class="s">"Skee Mask"</span>, <span class="k">"country"</span>: <span class="s">"DE"</span>,
+  <span class="k">"relations"</span>: <span class="n">18</span> <span class="c">// spotify, apple, lastfm, ...</span> }</div>
+  </details>
+
+  <details>
+    <summary>
+      <span class="label">Discogs</span><span class="handle">4039564</span>
+      <span class="verdict">4 urls</span><span class="caret">▶</span>
+    </summary>
+    <div class="raw">{ <span class="k">"name"</span>: <span class="s">"Skee Mask"</span>, <span class="k">"realname"</span>: <span class="s">"Ilian Skugor"</span>,
+  <span class="k">"urls"</span>: [<span class="s">"bandcamp"</span>, <span class="s">"soundcloud"</span>, <span class="s">"instagram"</span>, <span class="s">"twitter"</span>] }</div>
+  </details>
+
+  <details>
+    <summary>
+      <span class="label">IPI</span><span class="handle">00479499931</span>
+      <span class="verdict">valid</span><span class="caret">▶</span>
+    </summary>
+    <div class="raw">{ <span class="k">"ipi"</span>: <span class="s">"00479499931"</span>, <span class="k">"checksum"</span>: <span class="s">"pass"</span> <span class="c">// ISO 7172 mod-10</span>,
+  <span class="k">"pro_affiliation"</span>: <span class="s">"GEMA"</span> }</div>
+  </details>
+
+  <div class="score"><div class="score-num">94<span class="denom">/100</span></div><div class="score-label">Verification Score</div></div>
+
+  <div class="breakdown">
+    <div class="lbl">Spotify (popularity + followers)</div><div class="val add">+12</div>
+    <div class="lbl">Apple Music track present</div><div class="val add">+8</div>
+    <div class="lbl">Bandcamp URL claimed</div><div class="val add">+3</div>
+    <div class="lbl">SoundCloud URL claimed</div><div class="val add">+3</div>
+    <div class="lbl">MusicBrainz URL-relations (18)</div><div class="val add">+10</div>
+    <div class="lbl">Discogs URL count (4)</div><div class="val add">+5</div>
+    <div class="lbl">iTunes album count (4)</div><div class="val add">+2</div>
+    <div class="lbl">Two-source match (Spotify + Bandcamp)</div><div class="val add">+15</div>
+    <div class="lbl">IPI number (ISO 7172 checksum)</div><div class="val add">+10</div>
+    <div class="lbl">Wallet age &gt; 365 days</div><div class="val add">+10</div>
+    <div class="lbl">Etherscan: 142 txns</div><div class="val add">+10</div>
+    <div class="lbl">Twitter @sk33mask 404</div><div class="val neg">−2</div>
+    <div class="lbl" style="color: var(--ok); font-weight: 500;">= deterministic</div><div class="val add">89</div>
+    <div class="lbl">LLM qualitative adjustment</div><div class="val add">+5</div>
+    <div class="lbl" style="font-weight: 600; color: var(--ink);">= verification score</div><div class="val" style="font-weight: 600; color: var(--ink);">94</div>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="openModal">View raw evidence</button>
+    <button class="btn ghost">Anchor release</button>
+    <span class="btn-sep"></span>
+    <button class="btn link">View on Etherscan ↗</button>
+    <button class="btn link">View on MusicBrainz ↗</button>
+    <span class="btn-sep"></span>
+    <button class="btn warn">File dispute</button>
+  </div>
+  <div class="hint">8 expandable rows · 1 modal · 5 buttons · default is calm, depth is one click away</div>
+</div>
+
+<!-- Modal -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Raw evidence · skeemask <em>94 / 100</em></h2>
+      <button class="modal-close" id="closeModal">close ✕</button>
+    </div>
+    <div class="modal-tabs">
+      <button class="modal-tab active" data-tab="evidence">Evidence JSON</button>
+      <button class="modal-tab" data-tab="calldata">Calldata</button>
+      <button class="modal-tab" data-tab="validator">Validator run</button>
+      <button class="modal-tab" data-tab="logs">Logs</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-panel active" data-panel="evidence">
+<pre class="json"><span class="c">// leader.run_nondet_unsafe output — what the validator re-runs</span>
+{
+  <span class="k">"artist"</span>: {
+    <span class="k">"wallet"</span>: <span class="s">"0x8a5ad42c…f7e2"</span>,
+    <span class="k">"canonical_name"</span>: <span class="s">"Skee Mask"</span>,
+    <span class="k">"display_name"</span>: <span class="s">"Ilian Skugor"</span>,
+    <span class="k">"handle"</span>: <span class="s">"skeemask"</span>
+  },
+  <span class="k">"evidence"</span>: {
+    <span class="k">"spotify_artist_id"</span>: <span class="s">"2qwi0hBvI2GrbkurOnw3hZ"</span>,
+    <span class="k">"spotify_popularity"</span>: <span class="n">78</span>,
+    <span class="k">"spotify_followers"</span>: <span class="n">47210</span>,
+    <span class="k">"apple_music_artist_id"</span>: <span class="s">"930597571"</span>,
+    <span class="k">"apple_music_track_present"</span>: <span class="b">true</span>,
+    <span class="k">"bandcamp"</span>: <span class="s">"ilian-tape.bandcamp.com"</span>,
+    <span class="k">"soundcloud"</span>: <span class="s">"skee-mask"</span>,
+    <span class="k">"verification_source_1"</span>: <span class="s">"spotify_url"</span>,
+    <span class="k">"verification_handle_1"</span>: <span class="s">"https://open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ"</span>,
+    <span class="k">"verification_source_2"</span>: <span class="s">"bandcamp_url"</span>,
+    <span class="k">"verification_handle_2"</span>: <span class="s">"https://ilian-tape.bandcamp.com"</span>,
+    <span class="k">"verification_match_count"</span>: <span class="n">2</span>
+  },
+  <span class="k">"score"</span>: { <span class="k">"deterministic_total"</span>: <span class="n">89</span>, <span class="k">"llm_adjustment"</span>: <span class="n">5</span>, <span class="k">"raw_total"</span>: <span class="n">94</span> },
+  <span class="k">"consensus"</span>: { <span class="k">"leader_score"</span>: <span class="n">94</span>, <span class="k">"validator_score"</span>: <span class="n">92</span>, <span class="k">"result"</span>: <span class="s">"PASS"</span> }
+}</pre>
+      </div>
+      <div class="modal-panel" data-panel="calldata">
+<pre class="json"><span class="c">// calldata passed leader → validator (sha256, hex)</span>
+<span class="s">"0x7a3f9b2e1d4c5a6b8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2"</span>
+
+<span class="c">// decoded as UTF-8, the calldata is the JSON object above</span>
+<span class="c">// DynArray → list, u256 → int (v0.3.3 fix)</span>
+<span class="c">// length: 1,847 bytes (well under 32 KiB block gas limit)</span></pre>
+      </div>
+      <div class="modal-panel" data-panel="validator">
+<pre class="json"><span class="c">// validator (0x9b62…4d18) re-runs the same calls in 4.2s</span>
+{
+  <span class="k">"validator_score"</span>: <span class="n">92</span>, <span class="k">"leader_score"</span>: <span class="n">94</span>,
+  <span class="k">"delta"</span>: <span class="n">2</span>, <span class="k">"tolerance"</span>: <span class="n">15</span>, <span class="k">"consensus"</span>: <span class="s">"PASS"</span>
+}</pre>
+      </div>
+      <div class="modal-panel" data-panel="logs">
+<pre class="json">[14:22:01] <span class="k">leader.run_nondet_unsafe</span> begin
+[14:22:01] → gl.nondet.web.get spotify.com        <span class="s">200</span>  (184ms)
+[14:22:02] → gl.nondet.web.get musicbrainz        <span class="s">200</span>  (412ms)
+[14:22:02] → gl.nondet.web.get api.discogs.com    <span class="s">200</span>  (388ms)
+[14:22:03] → etherscan_first_tx                    <span class="s">OK</span>   (98ms)
+[14:22:03] → gl.nondet.exec_prompt LLM scoring    <span class="s">+5</span>   (1.4s)
+[14:22:03] <span class="k">leader score 94</span>
+[14:22:05] <span class="k">validator score 92</span> (Δ=2 within ±15)
+[14:22:05] <span class="k">CONSENSUS PASS</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const backdrop = document.getElementById('modal');
+  document.getElementById('openModal').onclick = () => backdrop.classList.add('open');
+  document.getElementById('closeModal').onclick = () => backdrop.classList.remove('open');
+  backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.classList.remove('open'); };
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') backdrop.classList.remove('open'); });
+  function switchTab(name) {
+    document.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.modal-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+  }
+  document.querySelectorAll('.modal-tab').forEach(t => { t.onclick = () => switchTab(t.dataset.tab); });
+</script>
+
+</body>
+</html>

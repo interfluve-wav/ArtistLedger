@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flow — Live → Minimal (after auth)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #fafaf7;
+    --ink: #0f1115;
+    --ink-2: #5b6075;
+    --ink-3: #9aa0b3;
+    --line: #e6e3da;
+    --line-2: #f0ede4;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --ok: #16a34a;
+    --warn: #d97706;
+    --err: #dc2626;
+    --paper: #f7f3ec;
+    --paper-rule: #d8d2c5;
+    --paper-ink: #1a1814;
+    --paper-muted: #6b655a;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 24px;
+    background: white;
+    border-bottom: 1px solid var(--line);
+  }
+  .logo { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .logo-dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; }
+  .header-meta { display: flex; gap: 16px; font-size: 12px; color: var(--ink-2); }
+  .header-meta b { color: var(--ink); font-weight: 500; }
+
+  /* ═══ STATE 1: split-pane, live ═══ */
+  .split { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 53px); }
+  .left { background: white; border-right: 1px solid var(--line); padding: 32px 36px; transition: all 0.6s ease; overflow-y: auto; max-height: calc(100vh - 53px); }
+  .right { padding: 32px 36px; background: var(--bg); transition: all 0.6s ease; overflow-y: auto; max-height: calc(100vh - 53px); }
+
+  .step-h { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; }
+  h1 { font-size: 26px; font-weight: 600; margin-bottom: 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-2); margin-bottom: 28px; font-size: 14px; }
+
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 4px; font-weight: 500; }
+  .field input, .field select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 6px; font-family: inherit; font-size: 14px;
+    background: white; color: var(--ink); transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus {
+    border-color: var(--accent); outline: 2px solid var(--accent-soft);
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .section-divider { height: 1px; background: var(--line); margin: 28px 0; }
+  .section-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .section-label h2 { font-size: 15px; font-weight: 600; }
+  .section-label .hint { font-size: 12px; color: var(--ink-3); }
+  .src-row { display: grid; grid-template-columns: 180px 1fr; gap: 8px; margin-bottom: 8px; }
+  .src-row select, .src-row input { padding: 8px 10px; font-size: 13px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 18px; border: 1px solid var(--ink);
+    background: var(--ink); color: white;
+    border-radius: 6px; font-family: inherit; font-size: 13px;
+    font-weight: 500; cursor: pointer; transition: all 0.15s;
+  }
+  .btn.ghost { background: transparent; color: var(--ink); }
+  .btn:hover { opacity: 0.9; }
+
+  .run-card { background: white; border: 1px solid var(--line); border-radius: 8px; padding: 20px 24px; margin-bottom: 16px; }
+  .run-card .h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .run-card h3 { font-size: 14px; font-weight: 600; }
+  .pulse { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2); }
+  .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: pulse 1.6s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+  .check-list { list-style: none; }
+  .check-list li {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--line-2); font-size: 13px;
+  }
+  .check-list li:last-child { border-bottom: none; }
+  .check { flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; margin-top: 1px; }
+  .check.ok { background: rgba(22,163,74,0.12); color: var(--ok); }
+  .check.pending { background: var(--line-2); color: var(--ink-3); }
+  .check.err { background: rgba(220,38,38,0.12); color: var(--err); }
+  .check-detail { color: var(--ink-2); font-size: 12px; }
+
+  .score-banner {
+    background: linear-gradient(135deg, var(--ink) 0%, #1a1d28 100%);
+    color: white; padding: 24px 28px; border-radius: 8px;
+    margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .score-banner .label { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.6; }
+  .score-banner .big { font-size: 48px; font-weight: 600; line-height: 1; margin-top: 6px; }
+  .score-banner .big .denom { font-size: 20px; opacity: 0.5; }
+  .score-banner .verdict { text-align: right; }
+  .score-banner .verdict .badge { display: inline-block; background: var(--ok); color: var(--ink); padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; }
+
+  .matrix { display: grid; grid-template-columns: repeat(13, 1fr); gap: 4px; margin: 12px 0; }
+  .matrix div { aspect-ratio: 1; border-radius: 3px; background: var(--line-2); display: flex; align-items: center; justify-content: center; font-size: 9px; color: var(--ink-3); }
+  .matrix div.hit { background: var(--ok); color: white; }
+  .matrix div.miss { background: var(--err); color: white; }
+  .matrix div.dim { opacity: 0.4; }
+
+  /* ═══ STATE 2: minimal, post-auth ═══ */
+  .post-cert {
+    max-width: 740px; margin: 0 auto; padding: 72px 48px 100px;
+    display: none;
+  }
+  .post-cert.active { display: block; }
+  .post-cert .crest {
+    text-align: center; font-size: 11px; letter-spacing: 0.32em;
+    text-transform: uppercase; color: var(--paper-muted); margin-bottom: 16px;
+  }
+  .post-cert h1.post-name {
+    font-family: "Iowan Old Style", "Apple Garamond", Garamond, serif;
+    font-size: 38px; font-weight: 400; line-height: 1.15;
+    text-align: center; margin-bottom: 8px; letter-spacing: -0.01em;
+  }
+  .post-cert .subtitle {
+    text-align: center; font-style: italic; color: var(--paper-muted); margin-bottom: 48px;
+  }
+  .post-cert .seal {
+    width: 64px; height: 64px; border: 1.5px solid var(--paper-ink); border-radius: 50%;
+    margin: 0 auto 40px; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; letter-spacing: 0.2em; color: var(--paper-muted);
+  }
+  .post-cert .field-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 14px 0; border-bottom: 1px solid var(--paper-rule);
+    font-family: "Iowan Old Style", serif; font-size: 14px;
+  }
+  .post-cert .field-label { color: var(--paper-muted); }
+  .post-cert .field-value.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+  .post-cert .rule { border: none; border-top: 1px solid var(--paper-rule); margin: 32px 0; }
+  .post-cert .section-label {
+    font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--paper-muted); margin-bottom: 4px;
+  }
+  .post-cert .source-row {
+    border-bottom: 1px solid var(--paper-rule);
+    padding: 12px 0; display: grid; grid-template-columns: 120px 1fr 80px;
+    gap: 12px; align-items: baseline;
+    font-family: "Iowan Old Style", serif; font-size: 14px;
+  }
+  .post-cert .source-row .lbl {
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--paper-muted);
+  }
+  .post-cert .source-row .v { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+  .post-cert .source-row .verdict { font-size: 11px; color: var(--ok); text-align: right; font-style: italic; }
+  .post-cert .source-row .verdict.err { color: #8a3a1f; }
+  .post-cert .source-row .verdict.warn { color: var(--warn); }
+  .post-cert .score { text-align: center; margin: 48px 0 28px; }
+  .post-cert .score-num { font-family: "Iowan Old Style", serif; font-size: 72px; line-height: 1; font-weight: 400; }
+  .post-cert .score-num .denom { color: var(--paper-muted); font-size: 32px; }
+  .post-cert .score-label { font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--paper-muted); margin-top: 8px; }
+
+  .post-cert .actions {
+    display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 40px;
+  }
+  .post-cert .btn {
+    padding: 11px 22px; font-family: inherit; font-size: 12px;
+    letter-spacing: 0.06em; border-radius: 0; /* override */
+  }
+  .post-cert .btn.link {
+    background: transparent; color: var(--paper-muted); border: 1px solid var(--paper-rule);
+  }
+  .post-cert .btn.link:hover { color: var(--paper-ink); border-color: var(--paper-ink); }
+  .post-cert .btn-sep { width: 1px; height: 24px; background: var(--paper-rule); margin: 0 4px; }
+
+  /* Transition: split-pane collapses out, post-cert fades in */
+  .split.fading { opacity: 0; pointer-events: none; }
+  .post-cert.fading-in { animation: fadeIn 0.8s ease forwards; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Demo controls — small bar at the top to toggle states */
+  .demo-bar {
+    position: fixed; bottom: 16px; right: 16px;
+    background: var(--ink); color: white;
+    padding: 8px 14px; border-radius: 6px; font-size: 12px;
+    display: flex; gap: 8px; align-items: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000;
+  }
+  .demo-bar button {
+    background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3);
+    padding: 4px 10px; border-radius: 3px; font-family: inherit; font-size: 11px;
+    cursor: pointer; letter-spacing: 0.05em;
+  }
+  .demo-bar button:hover { background: rgba(255,255,255,0.25); }
+  .demo-bar button.active { background: var(--ok); border-color: var(--ok); color: white; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="logo-dot"></div>ProvenanceRegistry · register_artist</div>
+  <div class="header-meta">
+    <span>net <b>testnet</b></span>
+    <span>contract <b>0x7a3f…e9c1</b></span>
+    <span>block <b>#1,884,221</b></span>
+  </div>
+</header>
+
+<!-- ═══ STATE 1: split-pane, live ═══ -->
+<div class="split" id="split">
+
+<div class="left">
+  <div class="step-h">step 1 of 2 — claim</div>
+  <h1>Register an artist</h1>
+  <p class="sub">Two independent source verifications required.</p>
+
+  <div class="field">
+    <label>Artist name (legal or stage)</label>
+    <input value="Skee Mask" />
+  </div>
+
+  <div class="row2">
+    <div class="field">
+      <label>Display name</label>
+      <input value="Ilian Skugor" />
+    </div>
+  </div>
+
+  <div class="row2">
+    <div class="field">
+      <label>Wallet (signs the proof)</label>
+      <input value="0x8a5a…f7e2" style="font-family: monospace;" />
+    </div>
+    <div class="field">
+      <label>IPI number (optional)</label>
+      <input value="00479499931" style="font-family: monospace;" />
+    </div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <div class="section-label">
+    <h2>Two-source verification</h2>
+    <span class="hint">both must resolve to the same name</span>
+  </div>
+
+  <div class="src-row">
+    <select>
+      <option>Spotify</option>
+      <option>Apple Music</option>
+      <option>Bandcamp</option>
+      <option>SoundCloud</option>
+      <option>Instagram</option>
+      <option>Twitter</option>
+      <option>YouTube</option>
+      <option>TikTok</option>
+      <option>Tidal</option>
+      <option>Facebook</option>
+      <option>website</option>
+      <option>IPI</option>
+    </select>
+    <input value="https://open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ" />
+  </div>
+
+  <div class="src-row">
+    <select>
+      <option>Bandcamp</option>
+      <option>Spotify</option>
+      <option>Apple Music</option>
+      <option>SoundCloud</option>
+      <option>Instagram</option>
+      <option>Twitter</option>
+      <option>YouTube</option>
+      <option>TikTok</option>
+      <option>Tidal</option>
+      <option>Facebook</option>
+      <option>website</option>
+      <option>IPI</option>
+    </select>
+    <input value="https://ilian-tape.bandcamp.com" />
+  </div>
+
+  <button class="btn" id="submitBtn">Sign &amp; submit proof →</button>
+</div>
+
+<div class="right">
+  <div class="step-h">step 2 of 2 — verification</div>
+  <h1>Cross-referencing sources</h1>
+  <p class="sub">Leader runs 7 API calls. Validator re-runs the same calls in 4.2s.</p>
+
+  <div class="score-banner">
+    <div>
+      <div class="label">verification score</div>
+      <div class="big">94<span class="denom">/100</span></div>
+    </div>
+    <div class="verdict">
+      <div class="label">consensus</div>
+      <div style="margin-top:6px"><span class="badge">VERIFIED</span></div>
+    </div>
+  </div>
+
+  <div class="run-card">
+    <div class="h">
+      <h3>Source I · Spotify</h3>
+      <div class="pulse"><div class="pulse-dot"></div>resolved</div>
+    </div>
+    <ul class="check-list">
+      <li><div class="check ok">✓</div><div><div>open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ</div><div class="check-detail">"Skee Mask" · 47,210 followers · 8 albums · popularity 78</div></div></li>
+      <li><div class="check ok">✓</div><div><div>name match against claim</div><div class="check-detail">display_name == "Skee Mask" · exact match</div></div></li>
+    </ul>
+  </div>
+
+  <div class="run-card">
+    <div class="h">
+      <h3>Source II · Bandcamp</h3>
+      <div class="pulse"><div class="pulse-dot"></div>resolved</div>
+    </div>
+    <ul class="check-list">
+      <li><div class="check ok">✓</div><div><div>ilian-tape.bandcamp.com</div><div class="check-detail">band page exists · label "Ilian Tape" · 14 releases</div></div></li>
+      <li><div class="check ok">✓</div><div><div>name match against claim</div><div class="check-detail">page title "Ilian Tape" · artist "Skee Mask" featured · match</div></div></li>
+    </ul>
+  </div>
+
+  <div class="run-card">
+    <div class="h">
+      <h3>Public-data cross-reference</h3>
+      <span style="font-size:11px;color:var(--ink-2)">5 of 13 sources matched</span>
+    </div>
+    <div class="matrix">
+      <div class="hit">SP</div><div class="hit">AM</div><div class="hit">BC</div><div class="hit">SC</div>
+      <div class="dim">IG</div><div class="miss">TW</div><div class="dim">YT</div><div class="dim">TT</div>
+      <div class="hit">MB</div><div class="hit">DG</div><div class="dim">LF</div><div class="hit">IPI</div>
+      <div class="dim">ENS</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══ STATE 2: minimal, post-auth ═══ -->
+<div class="post-cert" id="cert">
+  <div class="crest">Provenance Registry · On-Chain Attestation</div>
+  <h1 class="post-name">Ilian Skugor</h1>
+  <div class="subtitle">performing as <em>Skee Mask</em> · Munich</div>
+
+  <div class="seal">VRFD</div>
+
+  <div class="field-row"><span class="field-label">Wallet</span><span class="field-value mono">0x8a5a…f7e2</span></div>
+  <div class="field-row"><span class="field-label">Handle</span><span class="field-value mono">skeemask</span></div>
+  <div class="field-row"><span class="field-label">Registered</span><span class="field-value">2026-09-04 · 14:22 UTC</span></div>
+  <div class="field-row"><span class="field-label">Block</span><span class="field-value mono">#1,884,221</span></div>
+
+  <hr class="rule">
+
+  <div class="section-label">Two-Source Verification · 2 / 2 matched</div>
+  <div class="source-row">
+    <span class="lbl">Source I</span>
+    <span class="v">open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ</span>
+    <span class="verdict">✓ match</span>
+  </div>
+  <div class="source-row">
+    <span class="lbl">Source II</span>
+    <span class="v">ilian-tape.bandcamp.com</span>
+    <span class="verdict">✓ match</span>
+  </div>
+
+  <hr class="rule">
+
+  <div class="section-label">Public-Data Cross-Reference · 5 hit, 1 fail, 7 not checked</div>
+  <div class="source-row"><span class="lbl">Spotify</span><span class="v">2qwi0hBvI2GrbkurOnw3hZ</span><span class="verdict">match</span></div>
+  <div class="source-row"><span class="lbl">Apple Music</span><span class="v">930597571</span><span class="verdict">track</span></div>
+  <div class="source-row"><span class="lbl">Bandcamp</span><span class="v">ilian-tape.bandcamp.com</span><span class="verdict">match</span></div>
+  <div class="source-row"><span class="lbl">SoundCloud</span><span class="v">skee-mask</span><span class="verdict">profile</span></div>
+  <div class="source-row"><span class="lbl">Instagram</span><span class="v">—</span><span class="verdict warn">not checked</span></div>
+  <div class="source-row"><span class="lbl">Twitter</span><span class="v">@sk33mask</span><span class="verdict err">404</span></div>
+  <div class="source-row"><span class="lbl">YouTube</span><span class="v">—</span><span class="verdict warn">not checked</span></div>
+  <div class="source-row"><span class="lbl">TikTok</span><span class="v">—</span><span class="verdict warn">not checked</span></div>
+  <div class="source-row"><span class="lbl">Tidal</span><span class="v">—</span><span class="verdict warn">not checked</span></div>
+  <div class="source-row"><span class="lbl">Facebook</span><span class="v">—</span><span class="verdict warn">not checked</span></div>
+  <div class="source-row"><span class="lbl">MusicBrainz</span><span class="v">2b3e25…10cd2</span><span class="verdict">18 rels</span></div>
+  <div class="source-row"><span class="lbl">Discogs</span><span class="v">4039564</span><span class="verdict">4 urls</span></div>
+  <div class="source-row"><span class="lbl">IPI</span><span class="v">00479499931</span><span class="verdict">valid</span></div>
+
+  <div class="score"><div class="score-num">94<span class="denom">/100</span></div><div class="score-label">Verification Score</div></div>
+
+  <div class="actions">
+    <button class="btn ghost">Anchor release</button>
+    <span class="btn-sep"></span>
+    <button class="btn link">View raw evidence</button>
+    <button class="btn link">View on Etherscan ↗</button>
+    <button class="btn link">View on MusicBrainz ↗</button>
+    <span class="btn-sep"></span>
+    <button class="btn link" style="color: #8a3a1f;">File dispute</button>
+  </div>
+</div>
+
+<div class="demo-bar">
+  <span>state:</span>
+  <button id="resetBtn">live</button>
+  <button id="submitBarBtn">post-auth</button>
+</div>
+
+<script>
+  const split = document.getElementById('split');
+  const cert = document.getElementById('cert');
+  const submitBtn = document.getElementById('submitBtn');
+  const submitBarBtn = document.getElementById('submitBarBtn');
+  const resetBtn = document.getElementById('resetBtn');
+
+  function goLive() {
+    cert.classList.remove('active', 'fading-in');
+    split.classList.remove('fading');
+    split.style.display = 'grid';
+    resetBtn.classList.add('active');
+    submitBarBtn.classList.remove('active');
+  }
+  function goPostAuth() {
+    split.classList.add('fading');
+    setTimeout(() => {
+      split.style.display = 'none';
+      cert.classList.add('active', 'fading-in');
+      submitBarBtn.classList.add('active');
+      resetBtn.classList.remove('active');
+    }, 600);
+  }
+  submitBtn.onclick = goPostAuth;
+  submitBarBtn.onclick = goPostAuth;
+  resetBtn.onclick = goLive;
+  resetBtn.classList.add('active');
+</script>
+
+</body>
+</html>
