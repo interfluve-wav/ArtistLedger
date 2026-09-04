@@ -1,5 +1,30 @@
 # Architecture
 
+## Position in the agentic-commerce stack
+
+This contract is the **verification & disputes primitive** for music in
+the [GenLayer Compass](https://portal.genlayer.foundation/genesis/compass)
+stack. The Compass page positions GenLayer as the judgment layer that
+fills the gap the rest of the agentic-commerce stack leaves open:
+
+> Every layer assumes the happy path. None handles the moment
+> something goes wrong. That missing piece is adjudication.
+
+> GenLayer is the adjudication layer for the agentic-commerce stack:
+> machine-speed judgment when a transaction becomes ambiguous or
+> contested.
+
+The whitepaper's consensus mechanism is called **Optimistic Democracy**
+— a leader proposes, validators vote, majority wins, transactions
+execute optimistically. The custom `validator_fn` in our
+`run_nondet_unsafe` calls is the exact Optimistic Democracy pattern,
+specialized to re-derive evidence from public APIs rather than just
+vote on a value.
+
+The whitepaper also names **Trustless World Database** as a primary
+use case. This contract is a domain-specific Trustless World Database
+for music artist identity and release provenance.
+
 ## Why structured evidence + LLM adjustment, not a pure LLM judge
 
 The naive approach (v0.1.0) was: pass the LLM a free-form prompt asking it
