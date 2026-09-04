@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Editorial — Provenance Verification</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1a1814;
+    --paper: #f7f3ec;
+    --rule: #d8d2c5;
+    --accent: #8a3a1f;
+    --muted: #6b655a;
+    --ok: #2f5d3a;
+  }
+  body {
+    font-family: "Iowan Old Style", "Apple Garamond", Garamond, "Times New Roman", serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 760px; margin: 0 auto; padding: 80px 48px 120px; }
+  .crest {
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-size: 38px;
+    font-weight: 400;
+    line-height: 1.15;
+    text-align: center;
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    text-align: center;
+    font-style: italic;
+    color: var(--muted);
+    margin-bottom: 56px;
+  }
+  .seal {
+    width: 64px;
+    height: 64px;
+    border: 1.5px solid var(--ink);
+    border-radius: 50%;
+    margin: 0 auto 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+  }
+  .rule {
+    border: none;
+    border-top: 1px solid var(--rule);
+    margin: 32px 0;
+  }
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .field {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .field-label { color: var(--muted); font-size: 14px; }
+  .field-value { font-size: 16px; }
+  .field-value.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+  .claim {
+    background: #fff;
+    border: 1px solid var(--rule);
+    padding: 28px 32px;
+    margin: 32px 0;
+  }
+  .claim-title {
+    font-size: 22px;
+    margin-bottom: 4px;
+  }
+  .claim-meta {
+    color: var(--muted);
+    font-size: 14px;
+    margin-bottom: 20px;
+  }
+  .sources {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 24px;
+  }
+  .source {
+    border: 1px solid var(--rule);
+    padding: 16px;
+  }
+  .source .platform {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .source .handle {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 14px;
+    margin-top: 4px;
+  }
+  .source .verdict {
+    font-size: 12px;
+    color: var(--ok);
+    margin-top: 8px;
+    font-style: italic;
+  }
+  .score {
+    text-align: center;
+    margin: 56px 0 32px;
+  }
+  .score-num {
+    font-size: 72px;
+    line-height: 1;
+    font-weight: 400;
+  }
+  .score-num .denom { color: var(--muted); font-size: 32px; }
+  .score-label {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+  .breakdown {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 24px;
+    font-size: 13px;
+    margin: 24px 0;
+  }
+  .breakdown .lbl { color: var(--muted); }
+  .breakdown .val { text-align: right; }
+  .ledger {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--rule);
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+  .ledger code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    color: var(--ink);
+  }
+  .actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 40px;
+  }
+  .btn {
+    padding: 12px 24px;
+    font-family: inherit;
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    background: var(--ink);
+    color: var(--paper);
+    border: 1px solid var(--ink);
+    cursor: pointer;
+  }
+  .btn.ghost {
+    background: transparent;
+    color: var(--ink);
+  }
+  .btn:hover { opacity: 0.85; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="crest">Provenance Registry · On-Chain Attestation</div>
+  <h1>Ilian Skugor</h1>
+  <div class="subtitle">performing as <em>Skee Mask</em>, electronic producer, Munich</div>
+
+  <div class="seal">VRFD</div>
+
+  <div class="field">
+    <span class="field-label">Wallet</span>
+    <span class="field-value mono">0x8a5a…f7e2</span>
+  </div>
+  <div class="field">
+    <span class="field-label">Claimed handle</span>
+    <span class="field-value mono">skeemask</span>
+  </div>
+  <div class="field">
+    <span class="field-label">Registered</span>
+    <span class="field-value">2026-09-04 · 14:22 UTC</span>
+  </div>
+  <div class="field">
+    <span class="field-label">Block</span>
+    <span class="field-value mono">#1,884,221</span>
+  </div>
+
+  <hr class="rule">
+
+  <div class="section-label">Two-Source Verification</div>
+  <div class="claim">
+    <div class="claim-title">Skee Mask</div>
+    <div class="claim-meta">claimed by 0x8a5a…f7e2</div>
+
+    <div class="sources">
+      <div class="source">
+        <div class="platform">Source I</div>
+        <div class="handle">open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ</div>
+        <div class="verdict">✓ Spotify match · 47,210 followers · 8 albums</div>
+      </div>
+      <div class="source">
+        <div class="platform">Source II</div>
+        <div class="handle">ilian-tape.bandcamp.com</div>
+        <div class="verdict">✓ Bandcamp match · label "Ilian Tape" · 14 releases</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="score">
+    <div class="score-num">94<span class="denom">/100</span></div>
+    <div class="score-label">Verification Score</div>
+  </div>
+
+  <div class="breakdown">
+    <div class="lbl">Spotify (popularity + followers)</div><div class="val">+12</div>
+    <div class="lbl">Apple Music track present</div><div class="val">+8</div>
+    <div class="lbl">Bandcamp URL claimed</div><div class="val">+3</div>
+    <div class="lbl">SoundCloud URL claimed</div><div class="val">+3</div>
+    <div class="lbl">MusicBrainz URL-relations</div><div class="val">+10</div>
+    <div class="lbl">Two-source match (Spotify + Bandcamp)</div><div class="val">+15</div>
+    <div class="lbl">Single-source match (artist name)</div><div class="val">+8</div>
+    <div class="lbl">Artist role (electronic producer)</div><div class="val">+3</div>
+    <div class="lbl">Wallet age &gt; 365 days</div><div class="val">+10</div>
+    <div class="lbl">Etherscan: 142 txns</div><div class="val">+10</div>
+    <div class="lbl">Discogs URL count (4)</div><div class="val">+5</div>
+    <div class="lbl">iTunes album count (4)</div><div class="val">+2</div>
+    <div class="lbl">LLM qualitative adjustment</div><div class="val">+5</div>
+  </div>
+
+  <div class="ledger">
+    <code>calldata</code> 0x7a3f…e9c1 (sha256 of evidence + scores)<br>
+    <code>validator</code> 0x9b62…4d18 — re-ran leader within 15-pt tolerance<br>
+    <code>tx</code> 0xce84…aa02 — <code>register_artist()</code> on ProvenanceRegistry v0.3.4
+  </div>
+
+  <div class="actions">
+    <button class="btn">Anchor release</button>
+    <button class="btn ghost">Download certificate (PDF)</button>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Split-Pane — Live Verification</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #fafaf7;
+    --ink: #0f1115;
+    --ink-2: #5b6075;
+    --ink-3: #9aa0b3;
+    --line: #e6e3da;
+    --line-2: #f0ede4;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --ok: #16a34a;
+    --warn: #d97706;
+    --err: #dc2626;
+    --panel: #ffffff;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 24px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  .logo {
+    font-weight: 600;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .logo-dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; }
+  .header-meta { display: flex; gap: 16px; font-size: 12px; color: var(--ink-2); }
+  .header-meta b { color: var(--ink); font-weight: 500; }
+
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    min-height: calc(100vh - 53px);
+  }
+  .left {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    padding: 32px 36px;
+  }
+  .right {
+    padding: 32px 36px;
+    background: var(--bg);
+  }
+
+  .step-h {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 6px;
+  }
+  h1 {
+    font-size: 26px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    letter-spacing: -0.01em;
+  }
+  .sub {
+    color: var(--ink-2);
+    margin-bottom: 28px;
+    font-size: 14px;
+  }
+
+  .field {
+    margin-bottom: 18px;
+  }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--ink-2);
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    background: var(--panel);
+    color: var(--ink);
+    transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent-soft);
+    outline-offset: 0;
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .section-divider {
+    height: 1px;
+    background: var(--line);
+    margin: 28px 0;
+  }
+  .section-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .section-label h2 {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .section-label .hint {
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+
+  .src-row {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .src-row select, .src-row input {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 18px;
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: white;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .btn.ghost {
+    background: transparent;
+    color: var(--ink);
+  }
+  .btn:hover { opacity: 0.9; }
+
+  /* RIGHT PANE */
+  .run-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+  .run-card .h {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .run-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .pulse {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+  .pulse-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--ok);
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  .check-list { list-style: none; }
+  .check-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line-2);
+    font-size: 13px;
+  }
+  .check-list li:last-child { border-bottom: none; }
+  .check {
+    flex-shrink: 0;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 600;
+    margin-top: 1px;
+  }
+  .check.ok { background: rgba(22,163,74,0.12); color: var(--ok); }
+  .check.pending { background: var(--line-2); color: var(--ink-3); }
+  .check.err { background: rgba(220,38,38,0.12); color: var(--err); }
+  .check-detail { color: var(--ink-2); font-size: 12px; }
+
+  .score-banner {
+    background: linear-gradient(135deg, var(--ink) 0%, #1a1d28 100%);
+    color: white;
+    padding: 24px 28px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .score-banner .label { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.6; }
+  .score-banner .big {
+    font-size: 48px;
+    font-weight: 600;
+    line-height: 1;
+    margin-top: 6px;
+  }
+  .score-banner .big .denom { font-size: 20px; opacity: 0.5; }
+  .score-banner .verdict {
+    text-align: right;
+  }
+  .score-banner .verdict .badge {
+    display: inline-block;
+    background: var(--ok);
+    color: var(--ink);
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+  }
+
+  .matrix {
+    display: grid;
+    grid-template-columns: repeat(13, 1fr);
+    gap: 4px;
+    margin: 12px 0;
+  }
+  .matrix div {
+    aspect-ratio: 1;
+    border-radius: 3px;
+    background: var(--line-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: var(--ink-3);
+  }
+  .matrix div.hit { background: var(--ok); color: white; }
+  .matrix div.miss { background: var(--err); color: white; }
+  .matrix div.dim { opacity: 0.4; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    ProvenanceRegistry · register_artist
+  </div>
+  <div class="header-meta">
+    <span>net <b>testnet</b></span>
+    <span>contract <b>0x7a3f…e9c1</b></span>
+    <span>block <b>#1,884,221</b></span>
+  </div>
+</header>
+
+<div class="split">
+
+<!-- LEFT: CLAIM FORM -->
+<div class="left">
+  <div class="step-h">step 1 of 2 — claim</div>
+  <h1>Register an artist</h1>
+  <p class="sub">Two independent source verifications required.</p>
+
+  <div class="field">
+    <label>Artist name (legal or stage)</label>
+    <input value="Skee Mask" />
+  </div>
+
+  <div class="row2">
+    <div class="field">
+      <label>Display name</label>
+      <input value="Ilian Skugor" />
+    </div>
+    <div class="field">
+      <label>Role</label>
+      <select>
+        <option>electronic producer</option>
+        <option>artist</option>
+        <option>band</option>
+        <option>composer</option>
+        <option>producer</option>
+        <option>engineer</option>
+        <option>songwriter</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="row2">
+    <div class="field">
+      <label>Wallet (signs the proof)</label>
+      <input value="0x8a5a…f7e2" style="font-family: monospace;" />
+    </div>
+    <div class="field">
+      <label>IPI number (optional)</label>
+      <input value="00479499931" style="font-family: monospace;" />
+    </div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <div class="section-label">
+    <h2>Two-source verification</h2>
+    <span class="hint">both must resolve to the same name</span>
+  </div>
+
+  <div class="src-row">
+    <select>
+      <option>Spotify</option>
+      <option>Apple Music</option>
+      <option>Bandcamp</option>
+      <option>SoundCloud</option>
+      <option>Instagram</option>
+      <option>Twitter</option>
+      <option>YouTube</option>
+      <option>TikTok</option>
+      <option>Tidal</option>
+      <option>Facebook</option>
+      <option>website</option>
+      <option>IPI</option>
+    </select>
+    <input value="https://open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ" />
+  </div>
+
+  <div class="src-row">
+    <select>
+      <option>Bandcamp</option>
+      <option>Spotify</option>
+      <option>Apple Music</option>
+      <option>SoundCloud</option>
+      <option>Instagram</option>
+      <option>Twitter</option>
+      <option>YouTube</option>
+      <option>TikTok</option>
+      <option>Tidal</option>
+      <option>Facebook</option>
+      <option>website</option>
+      <option>IPI</option>
+    </select>
+    <input value="https://ilian-tape.bandcamp.com" />
+  </div>
+
+  <button class="btn">Sign & submit proof →</button>
+</div>
+
+<!-- RIGHT: LIVE VERIFICATION -->
+<div class="right">
+  <div class="step-h">step 2 of 2 — verification</div>
+  <h1>Cross-referencing sources</h1>
+  <p class="sub">Leader runs 7 API calls. Validator re-runs the same calls in 4.2s.</p>
+
+  <div class="score-banner">
+    <div>
+      <div class="label">verification score</div>
+      <div class="big">94<span class="denom">/100</span></div>
+    </div>
+    <div class="verdict">
+      <div class="label">consensus</div>
+      <div style="margin-top:6px"><span class="badge">VERIFIED</span></div>
+    </div>
+  </div>
+
+  <div class="run-card">
+    <div class="h">
+      <h3>Source I · Spotify</h3>
+      <div class="pulse"><div class="pulse-dot"></div>resolved</div>
+    </div>
+    <ul class="check-list">
+      <li>
+        <div class="check ok">✓</div>
+        <div>
+          <div>open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ</div>
+          <div class="check-detail">"Skee Mask" · 47,210 followers · 8 albums · popularity 78</div>
+        </div>
+      </li>
+      <li>
+        <div class="check ok">✓</div>
+        <div>
+          <div>name match against claim</div>
+          <div class="check-detail">display_name == "Skee Mask" · exact match</div>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="run-card">
+    <div class="h">
+      <h3>Source II · Bandcamp</h3>
+      <div class="pulse"><div class="pulse-dot"></div>resolved</div>
+    </div>
+    <ul class="check-list">
+      <li>
+        <div class="check ok">✓</div>
+        <div>
+          <div>ilian-tape.bandcamp.com</div>
+          <div class="check-detail">band page exists · label "Ilian Tape" · 14 releases</div>
+        </div>
+      </li>
+      <li>
+        <div class="check ok">✓</div>
+        <div>
+          <div>name match against claim</div>
+          <div class="check-detail">page title "Ilian Tape" · artist "Skee Mask" featured · match</div>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="run-card">
+    <div class="h">
+      <h3>Public-data cross-reference</h3>
+      <span style="font-size:11px;color:var(--ink-2)">5 of 13 sources matched</span>
+    </div>
+    <div class="matrix">
+      <div class="hit">SP</div>
+      <div class="hit">AM</div>
+      <div class="hit">BC</div>
+      <div class="hit">SC</div>
+      <div class="dim">IG</div>
+      <div class="miss">TW</div>
+      <div class="dim">YT</div>
+      <div class="dim">TT</div>
+      <div class="hit">MB</div>
+      <div class="hit">DG</div>
+      <div class="dim">LF</div>
+      <div class="hit">IPI</div>
+      <div class="dim">ENS</div>
+    </div>
+    <ul class="check-list">
+      <li>
+        <div class="check ok">✓</div>
+        <div>Apple Music · 930597571 · track "Compro" present</div>
+      </li>
+      <li>
+        <div class="check ok">✓</div>
+        <div>MusicBrainz · 18 URL-relations · MBID cross-validates Spotify</div>
+      </li>
+      <li>
+        <div class="check ok">✓</div>
+        <div>Discogs · 4 platform URLs · real-name Ilian Skugor</div>
+      </li>
+      <li>
+        <div class="check err">✗</div>
+        <div>Twitter · claimed @sk33mask · 404 not found</div>
+      </li>
+    </ul>
+  </div>
+
+</div>
+</div>
+
+</body>
+</html>

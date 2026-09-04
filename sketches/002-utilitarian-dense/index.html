@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Utilitarian — Verification Console</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0e0f12;
+    --panel: #161821;
+    --panel-2: #1d2030;
+    --line: #2a2e40;
+    --ink: #d8dae3;
+    --ink-2: #8a8fa3;
+    --ink-3: #5b6075;
+    --accent: #5eead4;
+    --warn: #fbbf24;
+    --err: #f87171;
+    --ok: #4ade80;
+  }
+  body {
+    font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+  }
+  .topbar {
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 6px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+  }
+  .tabs { display: flex; gap: 0; }
+  .tab {
+    padding: 6px 14px;
+    color: var(--ink-2);
+    border-right: 1px solid var(--line);
+    cursor: pointer;
+  }
+  .tab.active {
+    background: var(--bg);
+    color: var(--ink);
+    border-top: 2px solid var(--accent);
+    padding-top: 4px;
+  }
+  .tab:hover { color: var(--ink); }
+  .toolbar { display: flex; gap: 12px; align-items: center; color: var(--ink-3); }
+  .toolbar .pill {
+    background: var(--panel-2);
+    padding: 3px 8px;
+    border-radius: 3px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 280px 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    height: calc(100vh - 32px);
+  }
+  .panel {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel > .main { flex: 1 1 auto; }
+  .panel-h {
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--line);
+    padding: 6px 12px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    position: sticky;
+    top: 0;
+  }
+  .row {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .row:hover { background: var(--panel-2); cursor: pointer; }
+  .row.active { background: var(--panel-2); border-left: 2px solid var(--accent); padding-left: 10px; }
+  .row .id { color: var(--ink); }
+  .row .meta { color: var(--ink-3); font-size: 10px; }
+  .badge {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-size: 9px;
+    font-weight: 600;
+  }
+  .badge.ok { background: rgba(74,222,128,0.15); color: var(--ok); }
+  .badge.warn { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .badge.err { background: rgba(248,113,113,0.15); color: var(--err); }
+  .badge.neu { background: var(--panel-2); color: var(--ink-2); }
+  .main { padding: 16px 20px; overflow-y: auto; }
+  .main-h {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .kv {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 4px 12px;
+    font-size: 11px;
+  }
+  .kv .k { color: var(--ink-3); }
+  .kv .v { color: var(--ink); }
+  .v.num { color: var(--accent); }
+  .v.mono { font-family: inherit; }
+  .src-card {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    padding: 10px 12px;
+    margin: 8px 0;
+    border-radius: 3px;
+  }
+  .src-card .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .src-card .name { color: var(--accent); }
+  .src-card .url { color: var(--ink-2); font-size: 10px; word-break: break-all; }
+  .src-card .stats { font-size: 10px; color: var(--ink-3); margin-top: 4px; }
+  table.scor {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+  table.scor th {
+    text-align: left;
+    color: var(--ink-3);
+    font-weight: normal;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--line);
+    font-size: 10px;
+    text-transform: uppercase;
+  }
+  table.scor td {
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--line);
+  }
+  table.scor td.r { text-align: right; color: var(--accent); }
+  table.scor tr.tot td { color: var(--ink); font-weight: 600; border-top: 1px solid var(--line); }
+  .console {
+    background: #08090c;
+    border-top: 1px solid var(--line);
+    padding: 8px 12px;
+    font-size: 10px;
+    color: var(--ink-2);
+    max-height: 140px;
+    overflow-y: auto;
+    line-height: 1.5;
+    flex-shrink: 0;
+  }
+  .console .ok-line { color: var(--ok); }
+  .console .err-line { color: var(--err); }
+  .console .dim { color: var(--ink-3); }
+  .console .prompt { color: var(--accent); }
+  .big-score {
+    font-size: 36px;
+    color: var(--accent);
+    line-height: 1;
+    margin: 12px 0;
+  }
+  .big-score .denom { color: var(--ink-3); font-size: 18px; }
+  .bar {
+    height: 4px;
+    background: var(--panel-2);
+    border-radius: 2px;
+    overflow: hidden;
+    margin: 6px 0 12px;
+  }
+  .bar > div { height: 100%; background: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="tabs">
+    <div class="tab active">register_artist</div>
+    <div class="tab">anchor_release</div>
+    <div class="tab">dispute</div>
+    <div class="tab">is_verified_human</div>
+  </div>
+  <div class="toolbar">
+    <span class="pill">net: testnet</span>
+    <span class="pill">contract: 0x7a3f…e9c1</span>
+    <span class="pill">block: 1,884,221</span>
+    <span class="pill">gas: 0.012 ETH</span>
+  </div>
+</div>
+
+<div class="grid">
+  <!-- LEFT: ARTIST LIST -->
+  <div class="panel">
+    <div class="panel-h">artists · 14</div>
+    <div class="row active">
+      <div>
+        <div class="id">Skee Mask</div>
+        <div class="meta">0x8a5a…f7e2 · 94/100</div>
+      </div>
+      <span class="badge ok">VERIFIED</span>
+    </div>
+    <div class="row">
+      <div>
+        <div class="id">Burial</div>
+        <div class="meta">0x2c8e…4a91 · 88/100</div>
+      </div>
+      <span class="badge ok">VERIFIED</span>
+    </div>
+    <div class="row">
+      <div>
+        <div class="id">Aphex Twin</div>
+        <div class="meta">0x9f1d…b3c2 · 91/100</div>
+      </div>
+      <span class="badge ok">VERIFIED</span>
+    </div>
+    <div class="row">
+      <div>
+        <div class="id">J Dilla</div>
+        <div class="meta">0x6b4a…e8d5 · 76/100</div>
+      </div>
+      <span class="badge ok">VERIFIED</span>
+    </div>
+    <div class="row">
+      <div>
+        <div class="id">Kanye West</div>
+        <div class="meta">0xa1b2…c3d4 · 71/100</div>
+      </div>
+      <span class="badge ok">VERIFIED</span>
+    </div>
+    <div class="row">
+      <div>
+        <div class="id">Lana Del Rey</div>
+        <div class="meta">0xdead…beef · 82/100</div>
+      </div>
+      <span class="badge ok">VERIFIED</span>
+    </div>
+    <div class="row">
+      <div>
+        <div class="id">fake_skee_mask</div>
+        <div class="meta">0x0000…0001 · 18/100</div>
+      </div>
+      <span class="badge err">REJECTED</span>
+    </div>
+    <div class="row">
+      <div>
+        <div class="id">Burial (impersonator)</div>
+        <div class="meta">0x4f5a…6b7c · 32/100</div>
+      </div>
+      <span class="badge warn">DISPUTED</span>
+    </div>
+  </div>
+
+  <!-- MIDDLE: ARTIST DETAIL + EVIDENCE -->
+  <div class="panel">
+    <div class="panel-h">evidence · skeemask</div>
+    <div class="main">
+      <div class="main-h">
+        <span>Skee Mask / Ilian Skugor</span>
+        <span class="badge ok">2/2 sources match</span>
+      </div>
+
+      <div class="big-score">94<span class="denom">/100</span></div>
+      <div class="bar"><div style="width: 94%"></div></div>
+
+      <div class="kv">
+        <div class="k">wallet</div><div class="v">0x8a5ad42c…f7e2</div>
+        <div class="k">handle</div><div class="v">skeemask</div>
+        <div class="k">role</div><div class="v">electronic producer</div>
+        <div class="k">registered</div><div class="v">2026-09-04 14:22 UTC</div>
+        <div class="k">wallet_age</div><div class="v num">1,247 days</div>
+        <div class="k">tx_count</div><div class="v num">142</div>
+        <div class="k">ipi</div><div class="v num">00479499931 ✓</div>
+        <div class="k">mbid</div><div class="v">2b3e25ba-983e-44ac-9def-907e03910cd2</div>
+      </div>
+
+      <div class="main-h" style="margin-top:20px"><span>two-source verification</span></div>
+
+      <div class="src-card">
+        <div class="head">
+          <span class="name">Spotify</span>
+          <span class="badge ok">MATCH</span>
+        </div>
+        <div class="url">open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ</div>
+        <div class="stats">popularity 78 · followers 47,210 · genres: electronic, techno, idm</div>
+      </div>
+
+      <div class="src-card">
+        <div class="head">
+          <span class="name">Bandcamp</span>
+          <span class="badge ok">MATCH</span>
+        </div>
+        <div class="url">ilian-tape.bandcamp.com</div>
+        <div class="stats">label: Ilian Tape · 14 releases · verified artist profile</div>
+      </div>
+
+      <div class="main-h" style="margin-top:20px"><span>public-data cross-reference</span></div>
+
+      <div class="src-card">
+        <div class="head"><span class="name">Apple Music</span><span class="badge ok">TRACK</span></div>
+        <div class="url">music.apple.com/us/artist/930597571</div>
+        <div class="stats">track "Compro" present · 4 albums</div>
+      </div>
+      <div class="src-card">
+        <div class="head"><span class="name">MusicBrainz</span><span class="badge ok">18 RELS</span></div>
+        <div class="url">musicbrainz.org/artist/2b3e25ba…</div>
+        <div class="stats">18 URL relations · MBID cross-validates Spotify</div>
+      </div>
+      <div class="src-card">
+        <div class="head"><span class="name">Discogs</span><span class="badge ok">4 URLS</span></div>
+        <div class="url">discogs.com/artist/4039564</div>
+        <div class="stats">4 platform URLs · real-name: Ilian Skugor</div>
+      </div>
+      <div class="src-card">
+        <div class="head"><span class="name">SoundCloud</span><span class="badge ok">PROFILE</span></div>
+        <div class="url">soundcloud.com/skee-mask</div>
+        <div class="stats">exists · profile present</div>
+      </div>
+      <div class="src-card">
+        <div class="head"><span class="name">Last.fm</span><span class="badge neu">USER</span></div>
+        <div class="url">last.fm/music/Skee+Mask</div>
+        <div class="stats">user page exists</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: SCORING + CONSOLE -->
+  <div class="panel">
+    <div class="panel-h">scoring · breakdown</div>
+    <div class="main">
+      <table class="scor">
+        <thead><tr><th>tier</th><th>source</th><th class="r">pts</th></tr></thead>
+        <tbody>
+          <tr><td>T1</td><td>Spotify (popularity+followers)</td><td class="r">+12</td></tr>
+          <tr><td>T1</td><td>Apple Music track present</td><td class="r">+8</td></tr>
+          <tr><td>T1</td><td>Wallet age &gt; 365d</td><td class="r">+10</td></tr>
+          <tr><td>T1</td><td>Etherscan tx_count</td><td class="r">+10</td></tr>
+          <tr><td>T2</td><td>Bandcamp claimed URL</td><td class="r">+3</td></tr>
+          <tr><td>T2</td><td>SoundCloud claimed URL</td><td class="r">+3</td></tr>
+          <tr><td>T2</td><td>Last.fm user present</td><td class="r">+2</td></tr>
+          <tr><td>T3</td><td>MusicBrainz 18 URL-rels</td><td class="r">+10</td></tr>
+          <tr><td>T3</td><td>Discogs 4 URLs</td><td class="r">+5</td></tr>
+          <tr><td>T3</td><td>iTunes 4 albums</td><td class="r">+2</td></tr>
+          <tr><td>T5</td><td>two-source match (2/2)</td><td class="r">+15</td></tr>
+          <tr><td>T5</td><td>single-source match</td><td class="r">+8</td></tr>
+          <tr><td>T5</td><td>artist_role filled</td><td class="r">+3</td></tr>
+          <tr><td>LLM</td><td>qualitative adjustment</td><td class="r">+5</td></tr>
+          <tr class="tot"><td colspan="2">total</td><td class="r">96 → clamped 94</td></tr>
+        </tbody>
+      </table>
+
+      <div class="main-h" style="margin-top:20px"><span>validator consensus</span></div>
+      <div class="kv">
+        <div class="k">leader</div><div class="v">0x8a5a…f7e2</div>
+        <div class="k">leader_score</div><div class="v num">94</div>
+        <div class="k">validator</div><div class="v">0x9b62…4d18</div>
+        <div class="k">validator_score</div><div class="v num">92</div>
+        <div class="k">tolerance</div><div class="v num">±15</div>
+        <div class="k">consensus</div><div class="v"><span class="badge ok">PASS</span></div>
+      </div>
+    </div>
+
+    <div class="console">
+      <div><span class="dim">[14:22:01]</span> <span class="prompt">leader.run_nondet_unsafe</span> begin</div>
+      <div><span class="dim">[14:22:01]</span> → gl.nondet.web.get spotify.com  <span class="ok-line">200</span></div>
+      <div><span class="dim">[14:22:02]</span> → gl.nondet.web.get apple_music    <span class="ok-line">200</span></div>
+      <div><span class="dim">[14:22:02]</span> → gl.nondet.web.get musicbrainz     <span class="ok-line">200</span></div>
+      <div><span class="dim">[14:22:02]</span> → gl.nondet.web.get discogs         <span class="ok-line">200</span></div>
+      <div><span class="dim">[14:22:03]</span> → etherscan_first_tx                 <span class="ok-line">OK</span></div>
+      <div><span class="dim">[14:22:03]</span> → exec_prompt LLM scoring           <span class="ok-line">+5</span></div>
+      <div><span class="dim">[14:22:03]</span> <span class="ok-line">leader score 94</span></div>
+      <div><span class="dim">[14:22:04]</span> <span class="prompt">validator.run</span> begin</div>
+      <div><span class="dim">[14:22:05]</span> → re-running 7 nondet calls          <span class="ok-line">all match</span></div>
+      <div><span class="dim">[14:22:05]</span> <span class="ok-line">validator score 92 (Δ=2 within ±15)</span></div>
+      <div><span class="dim">[14:22:05]</span> <span class="ok-line">CONSENSUS PASS</span> → store.artist_registered()</div>
+      <div class="prompt">$</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
