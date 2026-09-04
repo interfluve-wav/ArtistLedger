@@ -33,10 +33,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   public Farcaster Hub path. Real Hub endpoints are on
   `hub.farcaster.xyz:2281` with a gRPC-style request shape. Field
   currently returns `""` for every wallet.
-- **Apple Music `wrapperType` field.** The iTunes Search API does not
-  return `wrapperType`; that's from the newer Apple Music API which
-  requires a developer JWT. The current parser will not match any
-  iTunes Search response. Drop the field or implement the JWT flow.
+- **Apple Music `limit=1` (not `wrapperType`).** The iTunes Search
+  URL is `?entity=musicArtist,musicTrack&limit=1`. With
+  `name+title`, iTunes returns the artist (more specific), so the
+  track branch is never hit and `ev.apple_music_track_present`
+  stays `False`. The `wrapperType` parser is fine — iTunes Search
+  *does* return `wrapperType: "artist"` and `wrapperType: "track"`.
+  Fix: drop `musicArtist` from the entity list, raise `limit` to 5,
+  read `artistId` from the first track result.
 - **Spotify `verified` flag.** The public Spotify Web API search
   endpoint does not return a `verified` boolean on artist objects. The
   scoring branch `ev.spotify_verified or (popularity >= 20 AND
@@ -50,6 +54,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Docstring headers** in `contracts/ProvenanceRegistry.py` (line 3)
   and `tests/test_provenance.py` (line 2) still say `v0.2.0`. Cosmetic
   but visible to reviewers.
+
+### Drafted (v0.3.4)
+
+- **Two-source verification parity with DISCO's artist signup.**
+  DISCO's own artist onboarding (extracted from the production
+  bundle at `static.disco.ac/disco-app/app-*.min.js`, function
+  `t.useSignupTypes`) requires the artist to claim **two verification
+  sources** from a fixed 13-enum whitelist before activation. v0.3.4
+  mirrors this: new `Evidence.verification_source_1` /
+  `verification_handle_1` / `verification_source_2` /
+  `verification_handle_2` fields and `verification_match_count`. New
+  scoring weights `W_TWO_SOURCE_MATCH = 15` and
+  `W_SINGLE_SOURCE_MATCH = 8`. New helpers for TikTok, Tidal, IPI,
+  Facebook, and website. New `--disco-mode` flag on
+  `examples/find_artist.py` to produce the exact JSON shape DISCO's
+  step 5 expects. **Role enum dropped** — DISCO's
+  `user_role: artist|band|composer|producer|engineer|songwriter` was
+  removed; all creators go through the same `register_artist` flow,
+  distinguished by which sources cross-reference (a composer has ASCAP
+  writer records but no Spotify artist page). Full spec in
+  `docs/PENDING.md` (v0.3.4 section). *Not implemented yet — drafted
+  2026-09-04 from live probe of `accounts.disco.ac`.*
 
 ## [0.3.3] - 2026-09-04
 
