@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Unified flow — register → settle → inspect</title>
+<style>
+  /* ═════════════ tokens ═════════════ */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1a1814;
+    --paper: #f7f3ec;
+    --rule: #d8d2c5;
+    --rule-soft: #ebe6da;
+    --accent: #8a3a1f;
+    --muted: #6b655a;
+    --ok: #2f5d3a;
+    --warn: #8a5a1f;
+    --err: #8a3a1f;
+    --code-bg: #f0ebde;
+    --bg: #fafaf7;
+    --line-ui: #e6e3da;
+    --ink-ui: #0f1115;
+    --ink-ui-2: #5b6075;
+    --ink-ui-3: #9aa0b3;
+    --accent-ui: #2563eb;
+    --accent-ui-soft: #dbeafe;
+  }
+  body {
+    font-family: "Iowan Old Style", "Apple Garamond", Garamond, "Times New Roman", serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    transition: background 0.6s;
+  }
+
+  /* ═════════════ shared header ═════════════ */
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 24px; background: white; border-bottom: 1px solid var(--line-ui);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  }
+  .logo { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .logo-dot { width: 8px; height: 8px; background: var(--accent-ui); border-radius: 50%; }
+  .header-meta { display: flex; gap: 16px; font-size: 12px; color: var(--ink-ui-2); }
+  .header-meta b { color: var(--ink-ui); font-weight: 500; }
+
+  /* ═════════════ state A: split-pane registration ═════════════ */
+  .split { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 53px); }
+  .split.hidden { display: none; }
+  .left {
+    background: white; border-right: 1px solid var(--line-ui);
+    padding: 32px 36px;
+    overflow-y: auto; max-height: calc(100vh - 53px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  }
+  .right {
+    padding: 32px 36px; background: var(--bg);
+    overflow-y: auto; max-height: calc(100vh - 53px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  }
+  .split.fading .left, .split.fading .right { opacity: 0; transform: translateY(8px); }
+
+  .step-h { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-ui-3); margin-bottom: 6px; }
+  .left h1, .right h1 { font-size: 26px; font-weight: 600; margin-bottom: 4px; letter-spacing: -0.01em; }
+  .left .sub, .right .sub { color: var(--ink-ui-2); margin-bottom: 28px; font-size: 14px; }
+
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 12px; color: var(--ink-ui-2); margin-bottom: 4px; font-weight: 500; }
+  .field input, .field select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line-ui);
+    border-radius: 6px; font-family: inherit; font-size: 14px;
+    background: white; color: var(--ink-ui); transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus {
+    border-color: var(--accent-ui); outline: 2px solid var(--accent-ui-soft);
+  }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .section-divider { height: 1px; background: var(--line-ui); margin: 28px 0; }
+  .section-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .section-label h2 { font-size: 15px; font-weight: 600; }
+  .section-label .hint { font-size: 12px; color: var(--ink-ui-3); }
+  .src-row { display: grid; grid-template-columns: 180px 1fr; gap: 8px; margin-bottom: 8px; }
+  .src-row select, .src-row input { padding: 8px 10px; font-size: 13px; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 18px; border: 1px solid var(--ink);
+    background: var(--ink); color: white;
+    border-radius: 6px; font-family: inherit; font-size: 13px;
+    font-weight: 500; cursor: pointer; transition: all 0.15s;
+  }
+  .btn.ghost { background: transparent; color: var(--ink); }
+  .btn:hover { opacity: 0.9; }
+
+  .run-card { background: white; border: 1px solid var(--line-ui); border-radius: 8px; padding: 20px 24px; margin-bottom: 16px; }
+  .run-card .h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .run-card h3 { font-size: 14px; font-weight: 600; }
+  .pulse { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-ui-2); }
+  .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: pulse 1.6s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+  .check-list { list-style: none; }
+  .check-list li {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--line-ui); font-size: 13px;
+  }
+  .check-list li:last-child { border-bottom: none; }
+  .check { flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; margin-top: 1px; }
+  .check.ok { background: rgba(22,163,74,0.12); color: var(--ok); }
+  .check.pending { background: var(--line-ui); color: var(--ink-ui-3); }
+  .check.err { background: rgba(220,38,38,0.12); color: var(--err); }
+  .check-detail { color: var(--ink-ui-2); font-size: 12px; }
+
+  .score-banner {
+    background: linear-gradient(135deg, var(--ink-ui) 0%, #1a1d28 100%);
+    color: white; padding: 24px 28px; border-radius: 8px;
+    margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .score-banner .label { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.6; }
+  .score-banner .big { font-size: 48px; font-weight: 600; line-height: 1; margin-top: 6px; }
+  .score-banner .big .denom { font-size: 20px; opacity: 0.5; }
+  .score-banner .verdict { text-align: right; }
+  .score-banner .verdict .badge { display: inline-block; background: var(--ok); color: var(--ink-ui); padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; }
+
+  .matrix { display: grid; grid-template-columns: repeat(13, 1fr); gap: 4px; margin: 12px 0; }
+  .matrix div { aspect-ratio: 1; border-radius: 3px; background: var(--line-ui); display: flex; align-items: center; justify-content: center; font-size: 9px; color: var(--ink-ui-3); }
+  .matrix div.hit { background: var(--ok); color: white; }
+  .matrix div.miss { background: var(--err); color: white; }
+  .matrix div.dim { opacity: 0.4; }
+
+  /* ═════════════ state B: minimal certificate (008 base) ═════════════ */
+  .cert {
+    max-width: 740px; margin: 0 auto; padding: 72px 48px 100px;
+    display: none;
+    animation: fadeIn 0.8s ease 0.4s both;
+  }
+  .cert.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .cert .crest { text-align: center; font-size: 11px; letter-spacing: 0.32em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; }
+  .cert h1 { font-size: 38px; font-weight: 400; line-height: 1.15; text-align: center; margin-bottom: 8px; letter-spacing: -0.01em; }
+  .cert .subtitle { text-align: center; font-style: italic; color: var(--muted); margin-bottom: 48px; }
+  .cert .seal {
+    width: 64px; height: 64px; border: 1.5px solid var(--ink); border-radius: 50%;
+    margin: 0 auto 40px; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; letter-spacing: 0.2em; color: var(--muted);
+  }
+  .cert .field {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 14px 0; border-bottom: 1px solid var(--rule);
+    font-family: "Iowan Old Style", "Apple Garamond", Garamond, "Times New Roman", serif;
+    font-size: 14px;
+  }
+  .cert .field-label { color: var(--muted); }
+  .cert .field-value.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+  .cert .rule { border: none; border-top: 1px solid var(--rule); margin: 32px 0; }
+  .cert .section-label {
+    font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .cert .section-label .meta { color: var(--muted); font-size: 10px; letter-spacing: 0.1em; font-weight: normal; text-transform: none; }
+
+  details { border-bottom: 1px solid var(--rule-soft); }
+  .cert summary {
+    list-style: none; cursor: pointer;
+    padding: 14px 0;
+    display: grid; grid-template-columns: 120px 1fr 80px 16px;
+    gap: 12px; align-items: baseline;
+    font-size: 14px; color: var(--ink);
+    transition: color 0.15s;
+  }
+  .cert summary::-webkit-details-marker { display: none; }
+  .cert summary:hover { color: var(--accent); }
+  .cert summary:focus { outline: none; }
+  .cert summary .label { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+  .cert summary .label:hover { color: var(--accent); }
+  .cert summary .handle { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+  .cert summary .verdict { font-size: 11px; color: var(--ok); text-align: right; font-style: italic; }
+  .cert summary .verdict.warn { color: var(--warn); }
+  .cert summary .verdict.err { color: var(--err); }
+  .cert summary .caret { color: var(--muted); font-size: 11px; transition: transform 0.15s; text-align: right; }
+  .cert details[open] summary .caret { transform: rotate(90deg); color: var(--accent); }
+  .cert details[open] summary .label { color: var(--accent); }
+  .cert .raw {
+    padding: 12px 14px; margin: 0 0 14px 0;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11.5px; line-height: 1.6;
+    color: var(--ink); background: var(--code-bg);
+    border-left: 2px solid var(--accent);
+    white-space: pre; overflow-x: auto;
+  }
+  .cert .raw .k { color: var(--accent); }
+  .cert .raw .s { color: var(--ok); }
+  .cert .raw .n { color: #5a3e1f; }
+  .cert .raw .b { color: #1f4a5a; }
+
+  .cert .score { text-align: center; margin: 48px 0 28px; }
+  .cert .score-num { font-size: 72px; line-height: 1; font-weight: 400; }
+  .cert .score-num .denom { color: var(--muted); font-size: 32px; }
+  .cert .score-label { font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
+
+  .cert .breakdown {
+    display: grid; grid-template-columns: 1fr 60px;
+    gap: 6px 24px; font-size: 13px; margin: 20px 0;
+  }
+  .cert .breakdown .lbl { color: var(--muted); }
+  .cert .breakdown .val { text-align: right; color: var(--ink); }
+  .cert .breakdown .val.add { color: var(--ok); }
+  .cert .breakdown .val.neg { color: var(--err); }
+
+  .cert .actions {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    justify-content: center; align-items: center; margin-top: 40px;
+  }
+  .cert .btn {
+    padding: 11px 22px; font-family: inherit; font-size: 12px;
+    letter-spacing: 0.06em; background: var(--ink); color: var(--paper);
+    border: 1px solid var(--ink); cursor: pointer; border-radius: 0;
+  }
+  .cert .btn.ghost { background: transparent; color: var(--ink); }
+  .cert .btn.link { background: transparent; color: var(--muted); border-color: var(--rule); }
+  .cert .btn.warn { background: transparent; color: var(--err); border-color: var(--rule); }
+  .cert .btn:hover { opacity: 0.85; }
+  .cert .btn.link:hover { color: var(--ink); border-color: var(--ink); }
+  .cert .btn.warn:hover { border-color: var(--err); }
+  .cert .btn-sep { width: 1px; height: 24px; background: var(--rule); margin: 0 4px; }
+  .cert .hint { text-align: center; font-size: 11px; color: var(--muted); font-style: italic; margin-top: 8px; }
+
+  /* ═════════════ modal (state C) ═════════════ */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(26, 24, 20, 0.65);
+    backdrop-filter: blur(2px);
+    display: none; align-items: flex-start; justify-content: center;
+    padding: 40px 16px; overflow-y: auto; z-index: 100;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--paper); width: 100%; max-width: 920px;
+    border: 1px solid var(--ink);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  }
+  .modal-head {
+    padding: 18px 28px; border-bottom: 1px solid var(--rule);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal-head h2 { font-size: 16px; font-weight: 400; letter-spacing: 0.02em; }
+  .modal-head h2 em { color: var(--muted); font-style: normal; font-size: 12px; letter-spacing: 0.1em; margin-left: 8px; }
+  .modal-close {
+    background: none; border: 1px solid var(--rule); color: var(--muted);
+    font-family: inherit; font-size: 11px; letter-spacing: 0.1em;
+    padding: 4px 12px; cursor: pointer;
+  }
+  .modal-close:hover { color: var(--ink); border-color: var(--ink); }
+  .modal-tabs { display: flex; border-bottom: 1px solid var(--rule); background: var(--code-bg); }
+  .modal-tab {
+    padding: 10px 18px; font-size: 11px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted);
+    border-right: 1px solid var(--rule); cursor: pointer;
+    background: transparent; border-top: none; border-bottom: none; border-left: none;
+    font-family: inherit;
+  }
+  .modal-tab.active { color: var(--ink); background: var(--paper); border-top: 2px solid var(--accent); padding-top: 8px; }
+  .modal-body { padding: 24px 28px 28px; max-height: 60vh; overflow-y: auto; }
+  .modal-panel { display: none; }
+  .modal-panel.active { display: block; }
+  pre.json {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.6;
+    white-space: pre-wrap; word-break: break-word;
+    background: var(--code-bg); padding: 16px 18px;
+    border-left: 2px solid var(--accent);
+  }
+  pre.json .k { color: var(--accent); }
+  pre.json .s { color: var(--ok); }
+  pre.json .n { color: #5a3e1f; }
+  pre.json .b { color: #1f4a5a; }
+  pre.json .c { color: var(--muted); font-style: italic; }
+
+  /* ═════════════ flow controller (sketch-only) ═════════════ */
+  .flow-bar {
+    position: fixed; bottom: 16px; right: 16px;
+    background: var(--ink); color: white;
+    padding: 8px 14px; border-radius: 6px; font-size: 12px;
+    display: flex; gap: 8px; align-items: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif;
+  }
+  .flow-bar .step-label { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.6; }
+  .flow-bar button {
+    background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3);
+    padding: 4px 10px; border-radius: 3px; font-family: inherit; font-size: 11px;
+    cursor: pointer; letter-spacing: 0.05em;
+  }
+  .flow-bar button:hover { background: rgba(255,255,255,0.25); }
+  .flow-bar button.active { background: var(--ok); border-color: var(--ok); color: white; }
+  .flow-bar button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .flow-bar .arrow { color: rgba(255,255,255,0.4); margin: 0 -2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="logo-dot"></div>ProvenanceRegistry · register_artist</div>
+  <div class="header-meta">
+    <span>net <b>testnet</b></span>
+    <span>contract <b>0x7a3f…e9c1</b></span>
+    <span>block <b id="blockNum">#1,884,221</b></span>
+  </div>
+</header>
+
+<!-- ══════════════ STATE A: split-pane (register + live verify) ══════════════ -->
+<div class="split" id="split">
+
+<div class="left">
+  <div class="step-h">step 1 of 2 — claim</div>
+  <h1>Register an artist</h1>
+  <p class="sub">Two independent source verifications required.</p>
+
+  <div class="field">
+    <label>Artist name (legal or stage)</label>
+    <input value="Skee Mask" />
+  </div>
+  <div class="field">
+    <label>Display name</label>
+    <input value="Ilian Skugor" />
+  </div>
+  <div class="row2">
+    <div class="field">
+      <label>Wallet (signs the proof)</label>
+      <input value="0x8a5a…f7e2" style="font-family: monospace;" />
+    </div>
+    <div class="field">
+      <label>IPI number (optional)</label>
+      <input value="00479499931" style="font-family: monospace;" />
+    </div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <div class="section-label">
+    <h2>Two-source verification</h2>
+    <span class="hint">both must resolve to the same name</span>
+  </div>
+
+  <div class="src-row">
+    <select>
+      <option>Spotify</option><option>Apple Music</option><option>Bandcamp</option>
+      <option>SoundCloud</option><option>Instagram</option><option>Twitter</option>
+      <option>YouTube</option><option>TikTok</option><option>Tidal</option>
+      <option>Facebook</option><option>website</option><option>IPI</option>
+    </select>
+    <input value="https://open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ" />
+  </div>
+  <div class="src-row">
+    <select>
+      <option>Bandcamp</option><option>Spotify</option><option>Apple Music</option>
+      <option>SoundCloud</option><option>Instagram</option><option>Twitter</option>
+      <option>YouTube</option><option>TikTok</option><option>Tidal</option>
+      <option>Facebook</option><option>website</option><option>IPI</option>
+    </select>
+    <input value="https://ilian-tape.bandcamp.com" />
+  </div>
+
+  <button class="btn" id="submitBtn">Sign &amp; submit proof →</button>
+</div>
+
+<div class="right">
+  <div class="step-h">step 2 of 2 — verification</div>
+  <h1>Cross-referencing sources</h1>
+  <p class="sub">Leader runs 7 API calls. Validator re-runs the same calls in 4.2s.</p>
+
+  <div class="score-banner">
+    <div>
+      <div class="label">verification score</div>
+      <div class="big">94<span class="denom">/100</span></div>
+    </div>
+    <div class="verdict">
+      <div class="label">consensus</div>
+      <div style="margin-top:6px"><span class="badge">VERIFIED</span></div>
+    </div>
+  </div>
+
+  <div class="run-card">
+    <div class="h">
+      <h3>Source I · Spotify</h3>
+      <div class="pulse"><div class="pulse-dot"></div>resolved</div>
+    </div>
+    <ul class="check-list">
+      <li><div class="check ok">✓</div><div><div>open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ</div><div class="check-detail">"Skee Mask" · 47,210 followers · 8 albums · popularity 78</div></div></li>
+      <li><div class="check ok">✓</div><div><div>name match against claim</div><div class="check-detail">display_name == "Skee Mask" · exact match</div></div></li>
+    </ul>
+  </div>
+
+  <div class="run-card">
+    <div class="h">
+      <h3>Source II · Bandcamp</h3>
+      <div class="pulse"><div class="pulse-dot"></div>resolved</div>
+    </div>
+    <ul class="check-list">
+      <li><div class="check ok">✓</div><div><div>ilian-tape.bandcamp.com</div><div class="check-detail">band page exists · label "Ilian Tape" · 14 releases</div></div></li>
+      <li><div class="check ok">✓</div><div><div>name match against claim</div><div class="check-detail">page title "Ilian Tape" · artist "Skee Mask" featured · match</div></div></li>
+    </ul>
+  </div>
+
+  <div class="run-card">
+    <div class="h">
+      <h3>Public-data cross-reference</h3>
+      <span style="font-size:11px;color:var(--ink-ui-2)">5 of 13 sources matched</span>
+    </div>
+    <div class="matrix">
+      <div class="hit">SP</div><div class="hit">AM</div><div class="hit">BC</div><div class="hit">SC</div>
+      <div class="dim">IG</div><div class="miss">TW</div><div class="dim">YT</div><div class="dim">TT</div>
+      <div class="hit">MB</div><div class="hit">DG</div><div class="dim">LF</div><div class="hit">IPI</div>
+      <div class="dim">ENS</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════ STATE B: minimal certificate (008 base, all rows) ══════════════ -->
+<div class="cert" id="cert">
+  <div class="crest">Provenance Registry · On-Chain Attestation</div>
+  <h1>Ilian Skugor</h1>
+  <div class="subtitle">performing as <em>Skee Mask</em> · Munich</div>
+
+  <div class="seal">VRFD</div>
+
+  <div class="field"><span class="field-label">Wallet</span><span class="field-value mono">0x8a5a…f7e2</span></div>
+  <div class="field"><span class="field-label">Handle</span><span class="field-value mono">skeemask</span></div>
+  <div class="field"><span class="field-label">Registered</span><span class="field-value">2026-09-04 · 14:22 UTC</span></div>
+  <div class="field"><span class="field-label">Block</span><span class="field-value mono">#1,884,221</span></div>
+
+  <hr class="rule">
+
+  <div class="section-label">
+    <span>Two-Source Verification</span>
+    <span class="meta">2 / 2 matched · click any row</span>
+  </div>
+
+  <details>
+    <summary>
+      <span class="label">Source I</span>
+      <span class="handle">open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ</span>
+      <span class="verdict">✓ match</span>
+      <span class="caret">▶</span>
+    </summary>
+    <div class="raw"><span class="k">"id"</span>: <span class="s">"2qwi0hBvI2GrbkurOnw3hZ"</span>,
+<span class="k">"name"</span>: <span class="s">"Skee Mask"</span>,
+<span class="k">"popularity"</span>: <span class="n">78</span>,
+<span class="k">"follower_count"</span>: <span class="n">47210</span>,
+<span class="k">"genres"</span>: [<span class="s">"electronic"</span>, <span class="s">"techno"</span>, <span class="s">"idm"</span>],
+<span class="k">"external_urls"</span>: {<span class="k">"spotify"</span>: <span class="s">"https://..."</span>}}</div>
+  </details>
+
+  <details>
+    <summary>
+      <span class="label">Source II</span>
+      <span class="handle">ilian-tape.bandcamp.com</span>
+      <span class="verdict">✓ match</span>
+      <span class="caret">▶</span>
+    </summary>
+    <div class="raw"><span class="k">"band_id"</span>: <span class="n">48201</span>,
+<span class="k">"name"</span>: <span class="s">"Ilian Tape"</span>,
+<span class="k">"releases_count"</span>: <span class="n">14</span>,
+<span class="k">"verified"</span>: <span class="b">true</span>}</div>
+  </details>
+
+  <div class="section-label" style="margin-top: 24px;">
+    <span>Public-Data Cross-Reference</span>
+    <span class="meta">5 hit, 1 fail, 7 not checked · click to inspect</span>
+  </div>
+
+  <details>
+    <summary><span class="label">Spotify</span><span class="handle">2qwi0hBvI2GrbkurOnw3hZ</span><span class="verdict">match</span><span class="caret">▶</span></summary>
+    <div class="raw">{ <span class="k">"id"</span>: <span class="s">"2qwi0hBvI2GrbkurOnw3hZ"</span>, <span class="k">"name"</span>: <span class="s">"Skee Mask"</span>,
+  <span class="k">"popularity"</span>: <span class="n">78</span>, <span class="k">"follower_count"</span>: <span class="n">47210</span> }</div>
+  </details>
+  <details>
+    <summary><span class="label">Apple Music</span><span class="handle">930597571</span><span class="verdict">track</span><span class="caret">▶</span></summary>
+    <div class="raw">{ <span class="k">"wrapperType"</span>: <span class="s">"track"</span>, <span class="k">"artistId"</span>: <span class="n">930597571</span>,
+  <span class="k">"artistName"</span>: <span class="s">"Skee Mask"</span>, <span class="k">"trackName"</span>: <span class="s">"Compro"</span> }</div>
+  </details>
+  <details>
+    <summary><span class="label">Bandcamp</span><span class="handle">ilian-tape.bandcamp.com</span><span class="verdict">match</span><span class="caret">▶</span></summary>
+    <div class="raw">{ <span class="k">"name"</span>: <span class="s">"Ilian Tape"</span>, <span class="k">"releases_count"</span>: <span class="n">14</span>,
+  <span class="k">"verified"</span>: <span class="b">true</span> }</div>
+  </details>
+  <details>
+    <summary><span class="label">SoundCloud</span><span class="handle">skee-mask</span><span class="verdict">profile</span><span class="caret">▶</span></summary>
+    <div class="raw">{ <span class="k">"handle"</span>: <span class="s">"skee-mask"</span>, <span class="k">"exists"</span>: <span class="b">true</span> }</div>
+  </details>
+  <details>
+    <summary><span class="label">Twitter</span><span class="handle">@sk33mask</span><span class="verdict err">404</span><span class="caret">▶</span></summary>
+    <div class="raw">{ <span class="k">"handle"</span>: <span class="s">"@sk33mask"</span>, <span class="k">"exists"</span>: <span class="b">false</span>,
+  <span class="k">"status"</span>: <span class="n">404</span>, <span class="k">"note"</span>: <span class="s">"claimed by user, page not found"</span> }</div>
+  </details>
+  <details>
+    <summary><span class="label">MusicBrainz</span><span class="handle">2b3e25…10cd2</span><span class="verdict">18 rels</span><span class="caret">▶</span></summary>
+    <div class="raw">{ <span class="k">"id"</span>: <span class="s">"2b3e25ba-983e-44ac-9def-907e03910cd2"</span>,
+  <span class="k">"name"</span>: <span class="s">"Skee Mask"</span>, <span class="k">"country"</span>: <span class="s">"DE"</span>,
+  <span class="k">"relations"</span>: <span class="n">18</span> <span class="c">// spotify, apple, lastfm, ...</span> }</div>
+  </details>
+  <details>
+    <summary><span class="label">Discogs</span><span class="handle">4039564</span><span class="verdict">4 urls</span><span class="caret">▶</span></summary>
+    <div class="raw">{ <span class="k">"name"</span>: <span class="s">"Skee Mask"</span>, <span class="k">"realname"</span>: <span class="s">"Ilian Skugor"</span>,
+  <span class="k">"urls"</span>: [<span class="s">"bandcamp"</span>, <span class="s">"soundcloud"</span>, <span class="s">"instagram"</span>, <span class="s">"twitter"</span>] }</div>
+  </details>
+  <details>
+    <summary><span class="label">IPI</span><span class="handle">00479499931</span><span class="verdict">valid</span><span class="caret">▶</span></summary>
+    <div class="raw">{ <span class="k">"ipi"</span>: <span class="s">"00479499931"</span>, <span class="k">"checksum"</span>: <span class="s">"pass"</span> <span class="c">// ISO 7172 mod-10</span>,
+  <span class="k">"pro_affiliation"</span>: <span class="s">"GEMA"</span> }</div>
+  </details>
+
+  <div class="score"><div class="score-num">94<span class="denom">/100</span></div><div class="score-label">Verification Score</div></div>
+
+  <div class="breakdown">
+    <div class="lbl">Spotify (popularity + followers)</div><div class="val add">+12</div>
+    <div class="lbl">Apple Music track present</div><div class="val add">+8</div>
+    <div class="lbl">Bandcamp URL claimed</div><div class="val add">+3</div>
+    <div class="lbl">SoundCloud URL claimed</div><div class="val add">+3</div>
+    <div class="lbl">MusicBrainz URL-relations (18)</div><div class="val add">+10</div>
+    <div class="lbl">Discogs URL count (4)</div><div class="val add">+5</div>
+    <div class="lbl">iTunes album count (4)</div><div class="val add">+2</div>
+    <div class="lbl">Two-source match (Spotify + Bandcamp)</div><div class="val add">+15</div>
+    <div class="lbl">IPI number (ISO 7172 checksum)</div><div class="val add">+10</div>
+    <div class="lbl">Wallet age &gt; 365 days</div><div class="val add">+10</div>
+    <div class="lbl">Etherscan: 142 txns</div><div class="val add">+10</div>
+    <div class="lbl">Twitter @sk33mask 404</div><div class="val neg">−2</div>
+    <div class="lbl" style="color: var(--ok); font-weight: 500;">= deterministic</div><div class="val add">89</div>
+    <div class="lbl">LLM qualitative adjustment</div><div class="val add">+5</div>
+    <div class="lbl" style="font-weight: 600; color: var(--ink);">= verification score</div><div class="val" style="font-weight: 600; color: var(--ink);">94</div>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="openModal">View raw evidence</button>
+    <button class="btn ghost">Anchor release</button>
+    <span class="btn-sep"></span>
+    <button class="btn link">View on Etherscan ↗</button>
+    <button class="btn link">View on MusicBrainz ↗</button>
+    <span class="btn-sep"></span>
+    <button class="btn warn">File dispute</button>
+  </div>
+  <div class="hint">click any evidence row to expand · "View raw evidence" opens the full technical modal</div>
+</div>
+
+<!-- ══════════════ STATE C: modal (raw evidence) ══════════════ -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Raw evidence · skeemask <em>94 / 100</em></h2>
+      <button class="modal-close" id="closeModal">close ✕</button>
+    </div>
+    <div class="modal-tabs">
+      <button class="modal-tab active" data-tab="evidence">Evidence JSON</button>
+      <button class="modal-tab" data-tab="calldata">Calldata</button>
+      <button class="modal-tab" data-tab="validator">Validator run</button>
+      <button class="modal-tab" data-tab="logs">Logs</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-panel active" data-panel="evidence">
+<pre class="json"><span class="c">// leader.run_nondet_unsafe output — what the validator re-runs</span>
+{
+  <span class="k">"artist"</span>: {
+    <span class="k">"wallet"</span>: <span class="s">"0x8a5ad42c…f7e2"</span>,
+    <span class="k">"canonical_name"</span>: <span class="s">"Skee Mask"</span>,
+    <span class="k">"display_name"</span>: <span class="s">"Ilian Skugor"</span>,
+    <span class="k">"handle"</span>: <span class="s">"skeemask"</span>
+  },
+  <span class="k">"evidence"</span>: {
+    <span class="k">"spotify_artist_id"</span>: <span class="s">"2qwi0hBvI2GrbkurOnw3hZ"</span>,
+    <span class="k">"spotify_popularity"</span>: <span class="n">78</span>,
+    <span class="k">"spotify_followers"</span>: <span class="n">47210</span>,
+    <span class="k">"apple_music_artist_id"</span>: <span class="s">"930597571"</span>,
+    <span class="k">"apple_music_track_present"</span>: <span class="b">true</span>,
+    <span class="k">"bandcamp"</span>: <span class="s">"ilian-tape.bandcamp.com"</span>,
+    <span class="k">"soundcloud"</span>: <span class="s">"skee-mask"</span>,
+    <span class="k">"musicbrainz_id"</span>: <span class="s">"2b3e25ba-983e-44ac-9def-907e03910cd2"</span>,
+    <span class="k">"musicbrainz_url_count"</span>: <span class="n">18</span>,
+    <span class="k">"discogs_artist_id"</span>: <span class="s">"4039564"</span>,
+    <span class="k">"ipi_checksum_pass"</span>: <span class="b">true</span>,
+    <span class="k">"wallet_age_days"</span>: <span class="n">1247</span>,
+    <span class="k">"verification_source_1"</span>: <span class="s">"spotify_url"</span>,
+    <span class="k">"verification_source_2"</span>: <span class="s">"bandcamp_url"</span>,
+    <span class="k">"verification_match_count"</span>: <span class="n">2</span>
+  },
+  <span class="k">"score"</span>: { <span class="k">"deterministic_total"</span>: <span class="n">89</span>, <span class="k">"llm_adjustment"</span>: <span class="n">5</span>, <span class="k">"raw_total"</span>: <span class="n">94</span> },
+  <span class="k">"consensus"</span>: { <span class="k">"leader_score"</span>: <span class="n">94</span>, <span class="k">"validator_score"</span>: <span class="n">92</span>, <span class="k">"result"</span>: <span class="s">"PASS"</span> }
+}</pre>
+      </div>
+      <div class="modal-panel" data-panel="calldata">
+<pre class="json"><span class="c">// calldata passed leader → validator (sha256, hex)</span>
+<span class="s">"0x7a3f9b2e1d4c5a6b8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2"</span>
+
+<span class="c">// decoded as UTF-8, the calldata is the JSON object above</span>
+<span class="c">// DynArray → list, u256 → int (v0.3.3 fix)</span>
+<span class="c">// length: 1,847 bytes (well under 32 KiB block gas limit)</span></pre>
+      </div>
+      <div class="modal-panel" data-panel="validator">
+<pre class="json"><span class="c">// validator (0x9b62…4d18) re-runs the same calls in 4.2s</span>
+{
+  <span class="k">"validator_score"</span>: <span class="n">92</span>, <span class="k">"leader_score"</span>: <span class="n">94</span>,
+  <span class="k">"delta"</span>: <span class="n">2</span>, <span class="k">"tolerance"</span>: <span class="n">15</span>, <span class="k">"consensus"</span>: <span class="s">"PASS"</span>
+}</pre>
+      </div>
+      <div class="modal-panel" data-panel="logs">
+<pre class="json">[14:22:01] <span class="k">leader.run_nondet_unsafe</span> begin
+[14:22:01] → gl.nondet.web.get spotify.com        <span class="s">200</span>  (184ms)
+[14:22:02] → gl.nondet.web.get musicbrainz        <span class="s">200</span>  (412ms)
+[14:22:02] → gl.nondet.web.get api.discogs.com    <span class="s">200</span>  (388ms)
+[14:22:03] → etherscan_first_tx                    <span class="s">OK</span>   (98ms)
+[14:22:03] → gl.nondet.exec_prompt LLM scoring    <span class="s">+5</span>   (1.4s)
+[14:22:03] <span class="k">leader score 94</span>
+[14:22:05] <span class="k">validator score 92</span> (Δ=2 within ±15)
+[14:22:05] <span class="k">CONSENSUS PASS</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ flow controller (sketch-only) ══════════════ -->
+<div class="flow-bar">
+  <span class="step-label">flow:</span>
+  <button id="stepA" class="active">A · register</button>
+  <span class="arrow">→</span>
+  <button id="stepB">B · certificate</button>
+  <span class="arrow">→</span>
+  <button id="stepC">C · inspect</button>
+  <span class="arrow">↺</span>
+  <button id="resetFlow">reset</button>
+</div>
+
+<script>
+  const split = document.getElementById('split');
+  const cert = document.getElementById('cert');
+  const modal = document.getElementById('modal');
+  const blockNum = document.getElementById('blockNum');
+  const submitBtn = document.getElementById('submitBtn');
+  const openModalBtn = document.getElementById('openModal');
+  const closeModalBtn = document.getElementById('closeModal');
+  const stepA = document.getElementById('stepA');
+  const stepB = document.getElementById('stepB');
+  const stepC = document.getElementById('stepC');
+  const resetFlow = document.getElementById('resetFlow');
+
+  function go(state) {
+    if (state === 'A') {
+      modal.classList.remove('open');
+      cert.classList.remove('active');
+      split.classList.remove('fading', 'hidden');
+      blockNum.textContent = '#1,884,221';  // reset block on return to A
+      stepA.classList.add('active'); stepB.classList.remove('active'); stepC.classList.remove('active');
+    } else if (state === 'B') {
+      modal.classList.remove('open');
+      // bump the block number to make the cert feel "real" (later tx)
+      blockNum.textContent = '#1,884,229';
+      split.classList.add('fading');
+      setTimeout(() => {
+        split.classList.add('hidden');
+        cert.classList.add('active');
+        stepB.classList.add('active'); stepA.classList.remove('active'); stepC.classList.remove('active');
+        window.scrollTo(0, 0);
+      }, 600);
+    } else if (state === 'C') {
+      // From B, open the modal
+      if (!cert.classList.contains('active')) go('B');
+      modal.classList.add('open');
+      stepC.classList.add('active'); stepA.classList.remove('active'); stepB.classList.remove('active');
+    }
+  }
+
+  submitBtn.onclick = () => go('B');
+  openModalBtn.onclick = () => go('C');
+  closeModalBtn.onclick = () => { modal.classList.remove('open'); stepB.classList.add('active'); stepC.classList.remove('active'); };
+  modal.onclick = (e) => { if (e.target === modal) { modal.classList.remove('open'); stepB.classList.add('active'); stepC.classList.remove('active'); } };
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('open')) {
+      modal.classList.remove('open'); stepB.classList.add('active'); stepC.classList.remove('active');
+    }
+  });
+
+  stepA.onclick = () => go('A');
+  stepB.onclick = () => go('B');
+  stepC.onclick = () => go('C');
+  resetFlow.onclick = () => go('A');
+
+  // Auto-trigger state from URL hash (e.g. #B or #C)
+  const hash = window.location.hash.replace('#', '').toUpperCase();
+  if (hash === 'B' || hash === 'C') {
+    setTimeout(() => go(hash), 100);
+  }
+
+  // Modal tabs
+  document.querySelectorAll('.modal-tab').forEach(t => {
+    t.onclick = () => {
+      document.querySelectorAll('.modal-tab').forEach(x => x.classList.toggle('active', x === t));
+      document.querySelectorAll('.modal-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === t.dataset.tab));
+    };
+  });
+</script>
+
+</body>
+</html>
