@@ -30,7 +30,8 @@ Suno-generated) can flip a release to contested.
 """
 
 from genlayer import *
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime
 import json
 
 
@@ -66,7 +67,9 @@ class Dispute(gl.Contract):
 
 # ─── Evidence dataclass (passed in leader/validator JSON) ─────────────────
 
-class Evidence(gl.Contract):
+@allow_storage
+@dataclass
+class Evidence:
     # Tier 1 — high signal, deterministic (max 45 points)
     acoustid_matched: bool
     acoustid_recording_mbid: str
@@ -324,7 +327,12 @@ def _lastfm_api_key() -> str:
 # ─── Tier 5 (wallet-derived) ──────────────────────────────────────────────
 
 def _wallet_age_days(wallet: str) -> int:
-    """Compute wallet age in days via Etherscan."""
+    """Compute wallet age in days via Etherscan.
+
+    Returns the number of whole days between the wallet's first on-chain
+    transaction and the current transaction's timestamp. Uses
+    `gl.message_raw['datetime']` (consensus-safe) for the "now" side.
+    """
     if not wallet:
         return 0
     api_key = _etherscan_api_key()
@@ -338,18 +346,12 @@ def _wallet_age_days(wallet: str) -> int:
         ts = int(first_tx.get("timeStamp", "0"))
         if not ts:
             return 0
-        # Approximate age in days (block.timestamp is per-block, we use
-        # the first tx timestamp as a proxy)
-        return _approx_days_from_unix(ts)
+        now = int(datetime.fromisoformat(gl.message_raw['datetime']).timestamp())
+        if now <= ts:
+            return 0
+        return (now - ts) // 86400
     except Exception:
         return 0
-
-
-def _approx_days_from_unix(ts: int) -> int:
-    """Convert a unix timestamp to an approximate day count. The contract
-    cannot use system clock, so we approximate against block.timestamp
-    (1 day = 7200 blocks at 12s/block on a healthy chain)."""
-    return ts // 86400  # caller will compare against block.timestamp
 
 
 def _etherscan_api_key() -> str:
@@ -471,8 +473,15 @@ class ProvenanceRegistry(gl.Contract):
     artist_releases: TreeMap[Address, DynArray[bytes]]
 
     def _now(self) -> int:
-        """Deterministic transaction timestamp (unix seconds)."""
-        return int(datetime.now(timezone.utc).timestamp())
+        """Consensus-safe transaction timestamp (unix seconds).
+
+        Reads the transaction datetime from `gl.message_raw` (ISO 8601
+        string) and converts to unix seconds. Every validator re-executing
+        the same transaction sees the same value, so this is safe to use
+        outside `run_nondet_unsafe` blocks for storage writes like
+        `verified_at`, `anchored_at`, and `filed_at`.
+        """
+        return int(datetime.fromisoformat(gl.message_raw['datetime']).timestamp())
 
     def _sender(self) -> Address:
         """Caller wallet address, exposed by GenVM."""
