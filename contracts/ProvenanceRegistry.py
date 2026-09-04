@@ -1,4 +1,5 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+# ruff: noqa: BLE001,S110
 """
 OnChainProvenanceRegistry — GenLayer Intelligent Contract v0.2.0
 
@@ -29,11 +30,11 @@ strong contrary evidence (e.g., a sample-match showing the audio is
 Suno-generated) can flip a release to contested.
 """
 
-from genlayer import *
+import json
 from dataclasses import dataclass
 from datetime import datetime
-import json
 
+from genlayer import *
 
 # ─── Storage layouts ───────────────────────────────────────────────────────
 
@@ -396,13 +397,12 @@ def _score_evidence(ev: Evidence, claimed_name: str) -> int:
         score += W_ACOUSTID
     if len(ev.isrc_codes) > 0:
         score += W_ISRC
-    if ev.spotify_artist_id:
-        # Spotify: 10 if verified OR (popularity >= 20 AND followers >= 1000)
-        if ev.spotify_verified or (
-            int(ev.spotify_popularity) >= 20
-            and int(ev.spotify_followers) >= 1000
-        ):
-            score += W_SPOTIFY
+    # Spotify: 10 if verified OR (popularity >= 20 AND followers >= 1000)
+    if ev.spotify_artist_id and (
+        ev.spotify_verified
+        or (int(ev.spotify_popularity) >= 20 and int(ev.spotify_followers) >= 1000)
+    ):
+        score += W_SPOTIFY
     if ev.apple_music_track_present:
         score += W_APPLE_MUSIC
 
@@ -515,11 +515,6 @@ class ProvenanceRegistry(gl.Contract):
             isrcs = _musicbrainz_isrc(mbid)
             for code in isrcs:
                 ev.isrc_codes.append(code)
-
-            mb_artist = _musicbrainz_artist(name)
-            if mb_artist:
-                # If we found an MBID, try to get ISRCs from the recording
-                pass
 
             sp = _spotify_search(name)
             if sp:

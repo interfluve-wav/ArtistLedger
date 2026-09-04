@@ -22,20 +22,26 @@ from unittest.mock import patch
 import pytest
 
 from contracts.ProvenanceRegistry import (
-    Evidence,
-    ProvenanceRegistry,
-    VERIFICATION_THRESHOLD,
     DISPUTE_UPHOLD_THRESHOLD,
     REPUTATION_PENALTY_PER_UPHELD_DISPUTE,
-    W_ACOUSTID, W_ISRC, W_SPOTIFY, W_APPLE_MUSIC,
-    W_BANDCAMP, W_SOUNDCLOUD, W_INSTAGRAM, W_LASTFM,
-    W_WALLET_AGE, W_WALLET_NAME, W_LLM_ADJUSTMENT_RANGE,
-    _score_evidence,
-    _name_token_overlap,
-    u256,
+    VERIFICATION_THRESHOLD,
+    W_ACOUSTID,
+    W_BANDCAMP,
+    W_INSTAGRAM,
+    W_ISRC,
+    W_LASTFM,
+    W_LLM_ADJUSTMENT_RANGE,
+    W_SOUNDCLOUD,
+    W_SPOTIFY,
+    W_WALLET_AGE,
+    W_WALLET_NAME,
     DynArray,
+    Evidence,
+    ProvenanceRegistry,
+    _name_token_overlap,
+    _score_evidence,
+    u256,
 )
-
 
 # ─── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -124,7 +130,7 @@ def _make_artist(wallet, *, score=80):
 
 
 def _make_release(wallet, audio_hash, *, title="Test"):
-    from contracts.ProvenanceRegistry import Release, DynArray
+    from contracts.ProvenanceRegistry import DynArray, Release
     return Release(
         artist=wallet,
         title=title,
