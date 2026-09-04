@@ -30,6 +30,8 @@ Suno-generated) can flip a release to contested.
 """
 
 from genlayer import *
+from datetime import datetime, timezone
+import json
 
 
 # ─── Storage layouts ───────────────────────────────────────────────────────
@@ -38,27 +40,27 @@ class Artist(gl.Contract):
     wallet: Address
     did: str
     name: str
-    verified_at: u64
-    score: u64
+    verified_at: u256
+    score: u256
     evidence: str  # JSON-serialized Evidence for onchain auditability
 
 
 class Release(gl.Contract):
     artist: Address
     title: str
-    audio_hash: bytes32
-    contributors: list[Address]
-    release_date: u64
-    anchored_at: u64
+    audio_hash: bytes
+    contributors: DynArray[Address]
+    release_date: u256
+    anchored_at: u256
     contested: bool
 
 
 class Dispute(gl.Contract):
-    audio_hash: bytes32
+    audio_hash: bytes
     claimant: Address
     claim: str
     evidence_url: str
-    filed_at: u64
+    filed_at: u256
     resolution: str
 
 
@@ -68,11 +70,11 @@ class Evidence(gl.Contract):
     # Tier 1 — high signal, deterministic (max 45 points)
     acoustid_matched: bool
     acoustid_recording_mbid: str
-    isrc_codes: list[str]               # any present = full 10 pts
+    isrc_codes: DynArray[str]            # any present = full 10 pts
     spotify_artist_id: str
     spotify_verified: bool
-    spotify_followers: int
-    spotify_popularity: int             # 0-100
+    spotify_followers: u256
+    spotify_popularity: u256             # 0-100
     apple_music_artist_id: str
     apple_music_track_present: bool
 
@@ -81,13 +83,13 @@ class Evidence(gl.Contract):
     bandcamp_real_name: str
     bandcamp_location: str
     soundcloud_handle: str
-    soundcloud_followers: int
+    soundcloud_followers: u256
     soundcloud_verified: bool
     instagram_handle: str
-    lastfm_scrobble_count: int
+    lastfm_scrobble_count: u256
 
     # Tier 5 — wallet-derived (max 10 points)
-    wallet_age_days: int
+    wallet_age_days: u256
     ens_name: str
     ens_matches_artist: bool
     farcaster_fname: str
@@ -103,22 +105,22 @@ class Evidence(gl.Contract):
         return Evidence(
             acoustid_matched=False,
             acoustid_recording_mbid="",
-            isrc_codes=[],
+            isrc_codes=DynArray[str](),
             spotify_artist_id="",
             spotify_verified=False,
-            spotify_followers=0,
-            spotify_popularity=0,
+            spotify_followers=u256(0),
+            spotify_popularity=u256(0),
             apple_music_artist_id="",
             apple_music_track_present=False,
             bandcamp_handle="",
             bandcamp_real_name="",
             bandcamp_location="",
             soundcloud_handle="",
-            soundcloud_followers=0,
+            soundcloud_followers=u256(0),
             soundcloud_verified=False,
             instagram_handle="",
-            lastfm_scrobble_count=0,
-            wallet_age_days=0,
+            lastfm_scrobble_count=u256(0),
+            wallet_age_days=u256(0),
             ens_name="",
             ens_matches_artist=False,
             farcaster_fname="",
@@ -128,10 +130,10 @@ class Evidence(gl.Contract):
 
 # ─── Constants ─────────────────────────────────────────────────────────────
 
-VERIFICATION_THRESHOLD: u64 = 70
-DISPUTE_UPHOLD_THRESHOLD: u64 = 60
-VALIDATOR_TOLERANCE: u64 = 15
-REPUTATION_PENALTY_PER_UPHELD_DISPUTE: u64 = 10
+VERIFICATION_THRESHOLD: u256 = u256(70)
+DISPUTE_UPHOLD_THRESHOLD: u256 = u256(60)
+VALIDATOR_TOLERANCE: u256 = u256(15)
+REPUTATION_PENALTY_PER_UPHELD_DISPUTE: u256 = u256(10)
 
 # Factor weights (sum to 100 max deterministic + ±5 LLM)
 W_ACOUSTID: int = 20
@@ -176,7 +178,7 @@ def _http_get_json(url: str) -> dict:
 
 # ─── Tier 1 factor collectors ─────────────────────────────────────────────
 
-def _acoustid_lookup(audio_hash: bytes32) -> tuple[bool, str]:
+def _acoustid_lookup(audio_hash: bytes) -> tuple[bool, str]:
     """Look up the audio hash in AcoustID. Returns (matched, recording_mbid)."""
     url = (
         f"{ACOUSTID_URL}?client={_acoustid_api_key()}"
@@ -198,13 +200,16 @@ def _acoustid_api_key() -> str:
     return ""  # In production, set via contract init or env
 
 
-def _musicbrainz_isrc(recording_id: str) -> list[str]:
+def _musicbrainz_isrc(recording_id: str) -> DynArray[str]:
     """Fetch ISRC codes for a MusicBrainz recording."""
     if not recording_id:
-        return []
+        return DynArray[str]()
     url = f"{MUSICBRAINZ_RECORDING_URL}{recording_id}?inc=isrcs&fmt=json"
     data = _http_get_json(url)
-    return data.get("isrcs", []) or []
+    result = DynArray[str]()
+    for code in data.get("isrcs", []):
+        result.append(code)
+    return result
 
 
 def _musicbrainz_artist(name: str) -> dict:
@@ -377,18 +382,23 @@ def _farcaster_fname(wallet: str) -> str:
 # ─── Scoring ──────────────────────────────────────────────────────────────
 
 def _score_evidence(ev: Evidence, claimed_name: str) -> int:
-    """Compute the deterministic score from an Evidence struct."""
+    """Compute the deterministic score from an Evidence struct.
+
+    Returns a Python int [0, 100]. The int is converted to u256 by the
+    caller when written to storage.
+    """
     score = 0
 
     # Tier 1 (max 45)
     if ev.acoustid_matched:
         score += W_ACOUSTID
-    if ev.isrc_codes:
+    if len(ev.isrc_codes) > 0:
         score += W_ISRC
     if ev.spotify_artist_id:
         # Spotify: 10 if verified OR (popularity >= 20 AND followers >= 1000)
         if ev.spotify_verified or (
-            ev.spotify_popularity >= 20 and ev.spotify_followers >= 1000
+            int(ev.spotify_popularity) >= 20
+            and int(ev.spotify_followers) >= 1000
         ):
             score += W_SPOTIFY
     if ev.apple_music_track_present:
@@ -397,15 +407,15 @@ def _score_evidence(ev: Evidence, claimed_name: str) -> int:
     # Tier 2 (max 20)
     if ev.bandcamp_handle:
         score += W_BANDCAMP
-    if ev.soundcloud_handle and (ev.soundcloud_verified or ev.soundcloud_followers >= 100):
+    if ev.soundcloud_handle and (ev.soundcloud_verified or int(ev.soundcloud_followers) >= 100):
         score += W_SOUNDCLOUD
     if ev.instagram_handle:
         score += W_INSTAGRAM
-    if ev.lastfm_scrobble_count >= 100:
+    if int(ev.lastfm_scrobble_count) >= 100:
         score += W_LASTFM
 
     # Tier 5 (max 10)
-    if ev.wallet_age_days >= 90:
+    if int(ev.wallet_age_days) >= 90:
         score += W_WALLET_AGE
     if ev.ens_matches_artist or ev.farcaster_fname:
         score += W_WALLET_NAME
@@ -454,11 +464,19 @@ def _regex_first(body: str, pattern: str) -> str:
 
 class ProvenanceRegistry(gl.Contract):
     artists: TreeMap[Address, Artist]
-    releases: TreeMap[bytes32, Release]
-    disputes: TreeMap[bytes32, Dispute]
-    identity_score: TreeMap[Address, u64]
-    identity_count: TreeMap[Address, u64]
-    artist_releases: TreeMap[Address, list[bytes32]]
+    releases: TreeMap[bytes, Release]
+    disputes: TreeMap[bytes, Dispute]
+    identity_score: TreeMap[Address, u256]
+    identity_count: TreeMap[Address, u256]
+    artist_releases: TreeMap[Address, DynArray[bytes]]
+
+    def _now(self) -> int:
+        """Deterministic transaction timestamp (unix seconds)."""
+        return int(datetime.now(timezone.utc).timestamp())
+
+    def _sender(self) -> Address:
+        """Caller wallet address, exposed by GenVM."""
+        return gl.message.sender_address
 
     # ─── Identity verification ─────────────────────────────────────────────
 
@@ -467,7 +485,7 @@ class ProvenanceRegistry(gl.Contract):
         self,
         did: str,
         name: str,
-        audio_hash: bytes32,
+        audio_hash: bytes,
         source_urls: dict,  # {"bandcamp": "handle", "soundcloud": ..., ...}
         wallet: str,
     ) -> str:
@@ -485,7 +503,9 @@ class ProvenanceRegistry(gl.Contract):
             matched, mbid = _acoustid_lookup(audio_hash)
             ev.acoustid_matched = matched
             ev.acoustid_recording_mbid = mbid
-            ev.isrc_codes = _musicbrainz_isrc(mbid)
+            isrcs = _musicbrainz_isrc(mbid)
+            for code in isrcs:
+                ev.isrc_codes.append(code)
 
             mb_artist = _musicbrainz_artist(name)
             if mb_artist:
@@ -496,8 +516,8 @@ class ProvenanceRegistry(gl.Contract):
             if sp:
                 ev.spotify_artist_id = sp.get("id", "")
                 ev.spotify_verified = bool(sp.get("verified", False))
-                ev.spotify_followers = int(sp.get("followers", {}).get("total", 0))
-                ev.spotify_popularity = int(sp.get("popularity", 0))
+                ev.spotify_followers = u256(int(sp.get("followers", {}).get("total", 0)))
+                ev.spotify_popularity = u256(int(sp.get("popularity", 0)))
 
             title_hint = source_urls.get("release_title", "")
             apple_id, track_present = _apple_music_search(name, title_hint)
@@ -559,19 +579,21 @@ class ProvenanceRegistry(gl.Contract):
 
         consensus_evidence = gl.vm.run_nondet_unsafe(leader_collect, validator_fn)
         score = _score_evidence(consensus_evidence, name)
+        sender = self._sender()
+        now = self._now()
 
         # Update running stats
-        prev_count = self.identity_count.get(msg.sender, 0)
-        self.identity_count[msg.sender] = prev_count + 1
-        self.identity_score[msg.sender] = score
+        prev_count = int(self.identity_count.get(sender, u256(0)))
+        self.identity_count[sender] = u256(prev_count + 1)
+        self.identity_score[sender] = u256(score)
 
-        if score >= VERIFICATION_THRESHOLD:
-            self.artists[msg.sender] = Artist(
-                wallet=msg.sender,
+        if score >= int(VERIFICATION_THRESHOLD):
+            self.artists[sender] = Artist(
+                wallet=sender,
                 did=did,
                 name=name,
-                verified_at=block.timestamp,
-                score=score,
+                verified_at=u256(now),
+                score=u256(score),
                 evidence=consensus_evidence.to_json(),
             )
             return f"Verified ({score})"
@@ -583,30 +605,32 @@ class ProvenanceRegistry(gl.Contract):
     @gl.public.write
     def anchor_release(
         self,
-        audio_hash: bytes32,
+        audio_hash: bytes,
         title: str,
-        contributors: list[Address],
-        release_date: u64,
+        contributors: DynArray[Address],
+        release_date: u256,
     ) -> str:
-        if msg.sender not in self.artists:
+        sender = self._sender()
+        if sender not in self.artists:
             return "Not a verified artist"
         if self.releases.get(audio_hash) is not None:
             return "Audio hash already anchored"
 
-        artist = self.artists[msg.sender]
+        artist = self.artists[sender]
+        now = self._now()
         self.releases[audio_hash] = Release(
-            artist=msg.sender,
+            artist=sender,
             title=title,
             audio_hash=audio_hash,
-            contributors=list(contributors),
+            contributors=contributors,
             release_date=release_date,
-            anchored_at=block.timestamp,
+            anchored_at=u256(now),
             contested=False,
         )
 
-        existing = self.artist_releases.get(msg.sender, [])
+        existing = self.artist_releases.get(sender, DynArray[bytes]())
         existing.append(audio_hash)
-        self.artist_releases[msg.sender] = existing
+        self.artist_releases[sender] = existing
 
         return f"Anchored '{title}' for {artist.name}"
 
@@ -614,12 +638,13 @@ class ProvenanceRegistry(gl.Contract):
 
     @gl.public.write
     def dispute(
-        self, audio_hash: bytes32, claim: str, evidence_url: str
+        self, audio_hash: bytes, claim: str, evidence_url: str
     ) -> str:
         release = self.releases.get(audio_hash)
         if release is None:
             return "Release not found"
-        if release.artist == msg.sender:
+        sender = self._sender()
+        if release.artist == sender:
             return "Cannot dispute your own release"
 
         artist = self.artists[release.artist]
@@ -639,31 +664,31 @@ class ProvenanceRegistry(gl.Contract):
                 own_score = leader_judge()
             except Exception:
                 return False
-            return abs(own_score - int(leader_result.calldata)) <= VALIDATOR_TOLERANCE
+            return abs(own_score - int(leader_result.calldata)) <= int(VALIDATOR_TOLERANCE)
 
         dispute_score = gl.vm.run_nondet_unsafe(leader_judge, validator_fn)
 
         self.disputes[audio_hash] = Dispute(
             audio_hash=audio_hash,
-            claimant=msg.sender,
+            claimant=sender,
             claim=claim,
             evidence_url=evidence_url,
-            filed_at=block.timestamp,
-            resolution="Upheld" if dispute_score >= DISPUTE_UPHOLD_THRESHOLD else "Dismissed",
+            filed_at=u256(self._now()),
+            resolution="Upheld" if dispute_score >= int(DISPUTE_UPHOLD_THRESHOLD) else "Dismissed",
         )
 
-        if dispute_score >= DISPUTE_UPHELD_THRESHOLD:
+        if dispute_score >= int(DISPUTE_UPHOLD_THRESHOLD):
             release.contested = True
             self.releases[audio_hash] = release
 
-            current_score = self.identity_score.get(release.artist, 70)
-            new_score = max(0, current_score - REPUTATION_PENALTY_PER_UPHELD_DISPUTE)
-            self.identity_score[release.artist] = new_score
+            current_score = int(self.identity_score.get(release.artist, u256(70)))
+            new_score = max(0, current_score - int(REPUTATION_PENALTY_PER_UPHELD_DISPUTE))
+            self.identity_score[release.artist] = u256(new_score)
             if release.artist in self.artists:
                 a = self.artists[release.artist]
-                a.score = new_score
+                a.score = u256(new_score)
                 if a.score < VERIFICATION_THRESHOLD:
-                    a.verified_at = 0
+                    a.verified_at = u256(0)
                 self.artists[release.artist] = a
 
             return f"Dispute upheld (score {dispute_score}); release contested"
@@ -672,7 +697,7 @@ class ProvenanceRegistry(gl.Contract):
     # ─── Read-only views ──────────────────────────────────────────────────
 
     @gl.public.view
-    def is_verified_human(self, audio_hash: bytes32) -> bool:
+    def is_verified_human(self, audio_hash: bytes) -> bool:
         release = self.releases.get(audio_hash)
         if release is None:
             return False
@@ -681,7 +706,7 @@ class ProvenanceRegistry(gl.Contract):
         artist = self.artists.get(release.artist)
         if artist is None:
             return False
-        return artist.score >= VERIFICATION_THRESHOLD and artist.verified_at > 0
+        return artist.score >= VERIFICATION_THRESHOLD and artist.verified_at > u256(0)
 
     @gl.public.view
     def get_artist(self, wallet: Address) -> dict:
@@ -690,30 +715,33 @@ class ProvenanceRegistry(gl.Contract):
             return {"verified": False}
         return {
             "verified": artist.score >= VERIFICATION_THRESHOLD
-            and artist.verified_at > 0,
+            and artist.verified_at > u256(0),
             "did": artist.did,
             "name": artist.name,
-            "score": artist.score,
-            "verified_at": artist.verified_at,
+            "score": int(artist.score),
+            "verified_at": int(artist.verified_at),
         }
 
     @gl.public.view
-    def get_release(self, audio_hash: bytes32) -> dict:
+    def get_release(self, audio_hash: bytes) -> dict:
         release = self.releases.get(audio_hash)
         if release is None:
             return {"found": False}
+        contributors_list = []
+        for c in release.contributors:
+            contributors_list.append(str(c))
         return {
             "found": True,
             "title": release.title,
             "artist": str(release.artist),
-            "contributors": [str(c) for c in release.contributors],
-            "release_date": release.release_date,
-            "anchored_at": release.anchored_at,
+            "contributors": contributors_list,
+            "release_date": int(release.release_date),
+            "anchored_at": int(release.anchored_at),
             "contested": release.contested,
         }
 
     @gl.public.view
-    def get_dispute(self, audio_hash: bytes32) -> dict:
+    def get_dispute(self, audio_hash: bytes) -> dict:
         dispute = self.disputes.get(audio_hash)
         if dispute is None:
             return {"found": False}
@@ -722,7 +750,7 @@ class ProvenanceRegistry(gl.Contract):
             "claimant": str(dispute.claimant),
             "claim": dispute.claim,
             "evidence_url": dispute.evidence_url,
-            "filed_at": dispute.filed_at,
+            "filed_at": int(dispute.filed_at),
             "resolution": dispute.resolution,
         }
 
@@ -747,12 +775,12 @@ def _build_sources_summary(ev: Evidence, source_urls: dict) -> str:
     lines = []
     if ev.acoustid_matched:
         lines.append(f"AcoustID matched: recording {ev.acoustid_recording_mbid}")
-    if ev.isrc_codes:
-        lines.append(f"ISRC codes found: {ev.isrc_codes}")
+    if len(ev.isrc_codes) > 0:
+        lines.append(f"ISRC codes found: {list(ev.isrc_codes)}")
     if ev.spotify_artist_id:
         lines.append(
             f"Spotify: id={ev.spotify_artist_id}, verified={ev.spotify_verified}, "
-            f"followers={ev.spotify_followers}, popularity={ev.spotify_popularity}"
+            f"followers={int(ev.spotify_followers)}, popularity={int(ev.spotify_popularity)}"
         )
     if ev.apple_music_artist_id:
         lines.append(f"Apple Music: artist_id={ev.apple_music_artist_id}")
@@ -763,13 +791,13 @@ def _build_sources_summary(ev: Evidence, source_urls: dict) -> str:
         )
     if ev.soundcloud_handle:
         lines.append(
-            f"SoundCloud: handle={ev.soundcloud_handle}, followers={ev.soundcloud_followers}, "
+            f"SoundCloud: handle={ev.soundcloud_handle}, followers={int(ev.soundcloud_followers)}, "
             f"verified={ev.soundcloud_verified}"
         )
     if ev.instagram_handle:
         lines.append(f"Instagram: handle={ev.instagram_handle}")
-    if ev.lastfm_scrobble_count:
-        lines.append(f"Last.fm scrobbles: {ev.lastfm_scrobble_count}")
+    if int(ev.lastfm_scrobble_count) > 0:
+        lines.append(f"Last.fm scrobbles: {int(ev.lastfm_scrobble_count)}")
     if ev.ens_name:
         lines.append(f"ENS: {ev.ens_name} (matches: {ev.ens_matches_artist})")
     if ev.farcaster_fname:
@@ -781,25 +809,28 @@ def _score_evidence_from_dict(d: dict, name: str) -> int:
     """Reconstruct an Evidence from a dict and score it. Used by validators
     that receive the leader's Evidence as calldata."""
     try:
+        isrc_codes = DynArray[str]()
+        for code in d.get("isrc_codes", []):
+            isrc_codes.append(code)
         ev = Evidence(
             acoustid_matched=bool(d.get("acoustid_matched", False)),
             acoustid_recording_mbid=d.get("acoustid_recording_mbid", ""),
-            isrc_codes=list(d.get("isrc_codes", [])),
+            isrc_codes=isrc_codes,
             spotify_artist_id=d.get("spotify_artist_id", ""),
             spotify_verified=bool(d.get("spotify_verified", False)),
-            spotify_followers=int(d.get("spotify_followers", 0)),
-            spotify_popularity=int(d.get("spotify_popularity", 0)),
+            spotify_followers=u256(int(d.get("spotify_followers", 0))),
+            spotify_popularity=u256(int(d.get("spotify_popularity", 0))),
             apple_music_artist_id=d.get("apple_music_artist_id", ""),
             apple_music_track_present=bool(d.get("apple_music_track_present", False)),
             bandcamp_handle=d.get("bandcamp_handle", ""),
             bandcamp_real_name=d.get("bandcamp_real_name", ""),
             bandcamp_location=d.get("bandcamp_location", ""),
             soundcloud_handle=d.get("soundcloud_handle", ""),
-            soundcloud_followers=int(d.get("soundcloud_followers", 0)),
+            soundcloud_followers=u256(int(d.get("soundcloud_followers", 0))),
             soundcloud_verified=bool(d.get("soundcloud_verified", False)),
             instagram_handle=d.get("instagram_handle", ""),
-            lastfm_scrobble_count=int(d.get("lastfm_scrobble_count", 0)),
-            wallet_age_days=int(d.get("wallet_age_days", 0)),
+            lastfm_scrobble_count=u256(int(d.get("lastfm_scrobble_count", 0))),
+            wallet_age_days=u256(int(d.get("wallet_age_days", 0))),
             ens_name=d.get("ens_name", ""),
             ens_matches_artist=bool(d.get("ens_matches_artist", False)),
             farcaster_fname=d.get("farcaster_fname", ""),
