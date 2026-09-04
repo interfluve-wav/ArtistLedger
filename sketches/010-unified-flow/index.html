@@ -564,7 +564,12 @@
     return s.trim();
   }
 
-  // ── resolve one claimed source → {matched, handle, reason, raw} ────────
+  // ── resolve one claimed source → {status, handle, reason, raw} ─────────
+  // status: 'confirmed' = independently verified (oEmbed / iTunes name match /
+  //         valid IPI checksum / MB url-rels cross-check);
+  //         'claimed'   = URL present but not verifiable from the browser
+  //         (CORS-limited — on-chain the VM can fetch it and upgrade to confirmed);
+  //         'failed'    = check ran and came back empty/mismatched.
   async function resolveSource(platform, raw, artistName) {
     const n = (artistName || "").trim();
 
@@ -573,7 +578,7 @@
       return {
         platform: "IPI",
         handle: String(raw || "").trim(),
-        matched: chk.valid,
+        status: chk.valid ? "confirmed" : "failed",
         reason: chk.valid ? "checksum valid (CISAC mod-101)" : "invalid IPI",
         raw: { ipi: String(raw || "").trim(), computed: chk.computed, checksum: chk.valid ? "pass" : "fail" }
       };
@@ -585,10 +590,11 @@
       const r = d && d.resultCount ? d.results[0] : null;
       const nm = r ? (r.artistName || r.collectionName || "") : "";
       const match = !!(n && nm.toLowerCase().includes(n.toLowerCase()));
+      const ok = n ? match : !!r;
       return {
         platform: "Apple Music",
         handle: id || String(raw || "").trim(),
-        matched: n ? match : !!r,
+        status: ok ? "confirmed" : "failed",
         reason: nm ? (match ? "artist name confirmed: " + nm : "name mismatch: " + nm) : (r ? "result found" : "no iTunes result"),
         raw: r || {}
       };
@@ -599,8 +605,10 @@
       return {
         platform: "Spotify",
         handle: id || String(raw || "").trim(),
-        matched: !!id,
-        reason: id ? "artist id present (no token for CORS-deep check)" : "no artist id in URL",
+        // browser can't deep-verify without token; MB url-rels cross-check
+        // upgrades this to confirmed later in runLive
+        status: id ? "claimed" : "failed",
+        reason: id ? "artist id present (MB cross-check pending)" : "no artist id in URL",
         raw: { id: id }
       };
     }
@@ -610,8 +618,8 @@
       return {
         platform: "Bandcamp",
         handle: h || String(raw || "").trim(),
-        matched: !!h,
-        reason: h ? "handle present (page check is server-side only)" : "no bandcamp handle",
+        status: h ? "claimed" : "failed",
+        reason: h ? "handle present (MB cross-check pending)" : "no bandcamp handle",
         raw: { handle: h }
       };
     }
@@ -623,19 +631,19 @@
       return {
         platform: "SoundCloud",
         handle: h || String(raw || "").trim(),
-        matched: ok,
+        status: ok ? "confirmed" : "failed",
         reason: ok ? "profile exists (oEmbed)" : "no oEmbed result",
         raw: d || {}
       };
     }
 
     // Instagram / Twitter / YouTube / TikTok / Tidal / Facebook / website:
-    // no CORS API — record presence only.
+    // no browser-resolvable public API — record as claimed only.
     const h = extractID(raw, "instagram") || extractID(raw, "twitter") || extractID(raw, "youtube") || String(raw || "").trim();
     return {
       platform: platform,
       handle: h,
-      matched: !!h,
+      status: h ? "claimed" : "failed",
       reason: "URL recorded (no browser-resolvable public API)",
       raw: { claimed: String(raw || "").trim() }
     };
@@ -672,7 +680,9 @@
     log.push("iTunes search → " + (appleId ? "artist " + appleId : "no artist"));
 
     // MusicBrainz artist + url-rels
-    let mbid = "", mbName = "", mbRels = 0, mbSpotifyId = "", mbHasApple = false, mbHasBandcamp = false, mbHasSoundcloud = false;
+    let mbid = "", mbName = "", mbRels = 0, mbSpotifyId = "", mbHasApple = false,
+        mbHasBandcamp = false, mbHasSoundcloud = false, mbHasInstagram = false,
+        mbHasTwitter = false, mbHasYoutube = false;
     const mbres = await getJSON("https://musicbrainz.org/ws/2/artist/?query=" + encodeURIComponent("artist:" + name) + "&fmt=json&limit=1", ua(), 2);
     if (mbres && mbres.artists && mbres.artists.length) {
       mbid = mbres.artists[0].id || "";
@@ -686,6 +696,9 @@
           if (u.includes("music.apple.com")) mbHasApple = true;
           if (u.includes("bandcamp.com")) mbHasBandcamp = true;
           if (u.includes("soundcloud.com")) mbHasSoundcloud = true;
+          if (u.includes("instagram.com")) mbHasInstagram = true;
+          if (u.includes("twitter.com") || u.includes("x.com")) mbHasTwitter = true;
+          if (u.includes("youtube.com")) mbHasYoutube = true;
         }
       }
     }
@@ -694,8 +707,33 @@
     // resolve the two claimed sources
     const r1 = await resolveSource(sources[0].platform, sources[0].raw, name);
     const r2 = sources[1] ? await resolveSource(sources[1].platform, sources[1].raw, name) : null;
-    log.push("Source 1 (" + sources[0].platform + "): " + (r1.matched ? "match" : "no — " + r1.reason));
-    if (r2) log.push("Source 2 (" + sources[1].platform + "): " + (r2.matched ? "match" : "no — " + r2.reason));
+
+    // Upgrade claimed → confirmed when MusicBrainz url-rels independently lists
+    // the same platform/handle for this artist. This is the honest CORS-safe
+    // surrogate for the on-chain VM's direct page fetch.
+    function upgradeConfirmed(s) {
+      if (!s || s.status !== "claimed") return s;
+      const up = { ...s };
+      if (s.platform === "Spotify" && s.handle && mbSpotifyId && s.handle === mbSpotifyId) {
+        up.status = "confirmed"; up.reason = "confirmed via MusicBrainz url-rels"; return up;
+      }
+      if (s.platform === "Bandcamp" && mbHasBandcamp) { up.status = "confirmed"; up.reason = "confirmed via MusicBrainz url-rels"; return up; }
+      if (s.platform === "SoundCloud" && mbHasSoundcloud) { up.status = "confirmed"; up.reason = "confirmed via MusicBrainz url-rels"; return up; }
+      if (s.platform === "Instagram" && mbHasInstagram) { up.status = "confirmed"; up.reason = "confirmed via MusicBrainz url-rels"; return up; }
+      if (s.platform === "Twitter" && mbHasTwitter) { up.status = "confirmed"; up.reason = "confirmed via MusicBrainz url-rels"; return up; }
+      if (s.platform === "YouTube" && mbHasYoutube) { up.status = "confirmed"; up.reason = "confirmed via MusicBrainz url-rels"; return up; }
+      return s;
+    }
+    r1.confirmed = upgradeConfirmed(r1);
+    r2.confirmed = r2 ? upgradeConfirmed(r2) : null;
+
+    const s1State = r1.confirmed.status, s2State = r2 ? r2.confirmed.status : "failed";
+    log.push("Source 1 (" + sources[0].platform + "): " + s1State + (s1State === "failed" ? " — " + r1.reason : ""));
+    if (r2) log.push("Source 2 (" + sources[1].platform + "): " + s2State + (s2State === "failed" ? " — " + r2.reason : ""));
+
+    // how many claimed sources resolved to a real, name-matching platform
+    const confirmedCount = (s1State === "confirmed" ? 1 : 0) + (s2State === "confirmed" ? 1 : 0);
+    const claimedCount = (s1State === "claimed" ? 1 : 0) + (s2State === "claimed" ? 1 : 0);
 
     // populating evidence
     evidence.spotify_id = extractID(sources[0].raw, "spotify") || extractID(sources[1] ? sources[1].raw : "", "spotify") || mbSpotifyId;
@@ -708,58 +746,52 @@
     evidence.musicbrainz_id = mbid;
     if (r1.platform === "IPI") evidence.ipi_number = r1.raw.ipi;
 
-    // ── deterministic score (contract weights) ──────────────────────────
+    // ── LENIENT score — pillars of independent corroboration ────────────
+    // You don't need to be on every app. Score is capped-not-punishing:
+    // identity is proven by signal density, not platform saturation.
     let score = 0;
     const breaks = [];
 
-    // two-source (v0.3.4 weights)
-    let matchCount = (r1.matched ? 1 : 0) + (r2 && r2.matched ? 1 : 0);
-    if (matchCount >= 2) { score += W.TWO_SOURCE; breaks.push(["Two-source match", "+" + W.TWO_SOURCE]); }
-    else if (matchCount === 1) { score += W.SINGLE_SOURCE; breaks.push(["Single-source match", "+" + W.SINGLE_SOURCE]); }
+    // Identity anchor (the strongest pillars)
+    if (mbid && mbRels >= 2) { score += 20; breaks.push(["MusicBrainz artist + url-rels (" + mbRels + ")", "+20"]); }
+    else if (mbid) { score += 12; breaks.push(["MusicBrainz artist", "+12"]); }
+    if (appleId) { score += 12; breaks.push(["Apple Music / iTunes artist", "+12"]); if (appleTrack) { score += 5; breaks.push(["  audio present on Apple", "+5"]); } }
 
-    // tier 1 — apple
-    if (evidence.apple_music_artist_id && appleTrack) { score += W.APPLE_MUSIC; breaks.push(["Apple Music track present", "+" + W.APPLE_MUSIC]); }
-    else if (evidence.apple_music_artist_id) { score += 3; breaks.push(["Apple Music artist found", "+3"]); }
+    // Two independent CONFIRMED sources = strong corroboration (any platform)
+    if (confirmedCount >= 2) { score += 25; breaks.push(["Two confirmed sources", "+25"]); }
+    else if (confirmedCount === 1 && claimedCount >= 1) { score += 15; breaks.push(["One confirmed + one claimed", "+15"]); }
+    else if (confirmedCount === 1) { score += 10; breaks.push(["One confirmed source", "+10"]); }
+    else if (claimedCount >= 2) { score += 6; breaks.push(["Two claimed URLs (unverified client-side)", "+6"]); }
 
-    // tier 1 — spotify: full credit iff MB confirms the same artist id
-    if (evidence.spotify_id && mbSpotifyId && evidence.spotify_id === mbSpotifyId) {
-      score += W.SPOTIFY; breaks.push(["Spotify (MB-confirmed id)", "+" + W.SPOTIFY]);
-    } else if (evidence.spotify_id) {
-      score += 3; breaks.push(["Spotify URL claimed", "+3"]);
+    // Each confirmed platform (not already counted) — rewards presence
+    // wherever it exists, never punishes absence.
+    for (const s of [r1.confirmed, r2.confirmed]) {
+      if (s && s.status === "confirmed" && !["IPI"].includes(s.platform)) {
+        score += 5; breaks.push([s.platform + " (confirmed)", "+5"]);
+      }
     }
 
-    // tier 2 — MB-confirmed source carries weight; otherwise just credit the URL
-    if (evidence.bandcamp) { if (mbHasBandcamp) { score += 5; breaks.push(["Bandcamp (MB-confirmed)", "+5"]); } else { score += 2; breaks.push(["Bandcamp claimed", "+2"]); } }
-    if (evidence.soundcloud) { if (mbHasSoundcloud) { score += 5; breaks.push(["SoundCloud (MB-confirmed)", "+5"]); } else { score += 2; breaks.push(["SoundCloud claimed", "+2"]); } }
-    if (evidence.instagram) { score += W.INSTAGRAM; breaks.push(["Instagram", "+" + W.INSTAGRAM]); }
-
-    // tier 2 — MusicBrainz dense url-rels is strong corroboration
-    if (mbRels >= 10) { score += 10; breaks.push(["MusicBrainz url-rels (" + mbRels + ")", "+10"]); }
-    else if (mbRels >= 4) { score += 5; breaks.push(["MusicBrainz url-rels (" + mbRels + ")", "+5"]); }
-    else if (mbid) { score += 3; breaks.push(["MusicBrainz artist", "+3"]); }
-
-    // IPI checksum (if claimed)
-    if (r1 && r1.platform === "IPI" && r1.matched) { score += W.IPI; breaks.push(["IPI checksum valid", "+" + W.IPI]); }
-    else if (r2 && r2.platform === "IPI" && r2.matched) { score += W.IPI; breaks.push(["IPI checksum valid", "+" + W.IPI]); }
+    // IPI reference (if provided and valid)
+    if (r1.raw && r1.platform === "IPI" && r1.status === "confirmed") { score += 10; breaks.push(["IPI checksum valid", "+10"]); }
+    else if (r2 && r2.platform === "IPI" && r2.status === "confirmed") { score += 10; breaks.push(["IPI checksum valid", "+10"]); }
 
     score = Math.max(0, Math.min(100, score));
 
-    // Verdict follows the two-source trust model: two independent claimed
-    // sources both resolving + MusicBrainz corroboration is a verified
-    // artist, regardless of the numeric cap (audio-based checks — AcoustID
-    // +20, ISRC +10, wallet +5+5, LLM ±5 — only run on-chain).
-    const twoSourceClear = matchCount >= 2 && !!mbid;
-    const verdict = (twoSourceClear || score >= W.THRESHOLD) ? "VERIFIED" : "NOT VERIFIED";
-    const partialNote = twoSourceClear
-      ? "two-source match + MB corroboration (audio checks run on-chain)"
-      : "client-side score only — audio checks (AcoustID/ISRC/wallet) run on-chain";
+    // Verdict: lenient — two confirmed sources (any platforms) OR a real
+    // MusicBrainz identity + one confirmed source clears the bar. Not being
+    // on Spotify is not a penalty.
+    const verified = (confirmedCount >= 2) || (confirmedCount >= 1 && mbid && mbRels >= 2);
+    const verdict = verified ? "VERIFIED" : "NOT VERIFIED";
+    const partialNote = verified
+      ? confirmedCount + " independent source(s) confirmed" + (mbid ? " + " + mbName + " on MusicBrainz" : "")
+      : "need at least 2 confirmed sources or a MusicBrainz identity + 1";
 
     return {
       name: name,
       score: score,
       verdict: verdict,
       partialNote: partialNote,
-      matchCount: matchCount,
+      matchCount: confirmedCount,
       breaks: breaks,
       evidence: evidence,
       r1: r1,
@@ -843,8 +875,8 @@
 
     // source rows
     const srcDefs = [
-      { id: 'cert-src1', hid: 's1-handle', vid: 's1-verdict', rid: 's1-raw', src: d.r1 },
-      { id: 'cert-src2', hid: 's2-handle', vid: 's2-verdict', rid: 's2-raw', src: d.r2 }
+      { id: 'cert-src1', hid: 's1-handle', vid: 's1-verdict', rid: 's1-raw', src: d.r1 && d.r1.confirmed },
+      { id: 'cert-src2', hid: 's2-handle', vid: 's2-verdict', rid: 's2-raw', src: d.r2 && d.r2.confirmed }
     ];
     for (const s of srcDefs) {
       const el = document.getElementById(s.id);
@@ -852,8 +884,9 @@
       el.style.display = '';
       document.getElementById(s.hid).textContent = s.src.handle || "—";
       const v = document.getElementById(s.vid);
-      v.textContent = s.src.matched ? "✓ match" : "✗ " + (s.src.matched === false ? s.src.reason || "no match" : "unverified");
-      v.className = "verdict" + (s.src.matched ? "" : " err");
+      if (s.src.status === "confirmed") { v.textContent = "✓ confirmed"; v.className = "verdict"; }
+      else if (s.src.status === "claimed") { v.textContent = "• claimed"; v.className = "verdict warn"; }
+      else { v.textContent = "✗ " + (s.src.reason || "no match"); v.className = "verdict err"; }
       document.getElementById(s.rid).textContent = JSON.stringify(s.src.raw, null, 2);
     }
 
@@ -863,11 +896,11 @@
     if (d.evidence.apple_music_artist_id) rows.push(["Apple Music", d.evidence.apple_music_artist_id, d.appleTrack ? "track" : "artist", { artistId: d.evidence.apple_music_artist_id, track_present: d.appleTrack }]);
     if (d.evidence.spotify_id) rows.push(["Spotify", d.evidence.spotify_id, "claimed", { id: d.evidence.spotify_id }]);
     if (d.evidence.bandcamp) rows.push(["Bandcamp", d.evidence.bandcamp, "claimed", { handle: d.evidence.bandcamp }]);
-    if (d.evidence.soundcloud) rows.push(["SoundCloud", d.evidence.soundcloud, d.r1 && d.r1.platform === "SoundCloud" && d.r1.matched ? "profile" : "claimed", { handle: d.evidence.soundcloud }]);
+    if (d.evidence.soundcloud) rows.push(["SoundCloud", d.evidence.soundcloud, (d.r1 && d.r1.confirmed && d.r1.confirmed.platform === "SoundCloud" && d.r1.confirmed.status === "confirmed") ? "profile" : "claimed", { handle: d.evidence.soundcloud }]);
     if (d.evidence.instagram) rows.push(["Instagram", d.evidence.instagram, "claimed", { handle: d.evidence.instagram }]);
     if (d.evidence.twitter) rows.push(["Twitter", d.evidence.twitter, "claimed", { handle: d.evidence.twitter }]);
     if (d.evidence.youtube) rows.push(["YouTube", d.evidence.youtube, "claimed", { channel: d.evidence.youtube }]);
-    if (d.r1 && d.r1.platform === "IPI") rows.push(["IPI", d.r1.raw.ipi, d.r1.matched ? "valid" : "invalid", d.r1.raw]);
+    if (d.r1 && d.r1.confirmed && d.r1.confirmed.platform === "IPI") rows.push(["IPI", d.r1.confirmed.raw.ipi || d.r1.confirmed.handle, d.r1.confirmed.status === "confirmed" ? "valid" : "invalid", d.r1.confirmed.raw]);
 
     const cross = document.getElementById('cross-rows');
     cross.innerHTML = "";
