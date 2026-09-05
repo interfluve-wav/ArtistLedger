@@ -143,11 +143,12 @@ sources:
 - SoundCloud / Instagram: kept existence-only (private APIs; documented)
 - Twitter / YouTube: claim-only pending API keys
 
-## Layer 3 — Two-source strict mode (configurable)
+## Layer 3 — IMPLEMENTED: Two-source strict mode (configurable)
 
-New `Artist.require_two_source: bool`. When True, score capped ≤5 unless
-`verification_match_count >= 2` — registration effectively rejected at
-consensus unless both claimed sources match.
+New `Artist.require_two_source: bool`. When True (default), score capped ≤5
+unless `verification_match_count >= 2` — registration effectively rejected
+at consensus unless both claimed sources match. Set False to opt into
+relaxed single-source onboarding.
 
 ## Layer 4 — find_artist.py updates
 

@@ -49,6 +49,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   JSON), Tidal + Facebook HTTP existence, personal-website name mention.
   SoundCloud/Instagram stay existence-only (private APIs; documented).
   Twitter/YouTube remain claim-only pending API keys.
+- **Strict two-source mode (Layer 3).** `register_artist` now takes a
+  `require_two_source: bool = True` argument. When True and fewer than two
+  claimed sources independently match, the score is capped at 5 — below
+  the 70 threshold — so registration is rejected at consensus. Set False
+  to opt into relaxed single-source onboarding.
 
 ### Known issues (still open)
 

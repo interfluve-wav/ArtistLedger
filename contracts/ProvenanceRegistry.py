@@ -45,6 +45,7 @@ class Artist(gl.Contract):
     verified_at: u256
     score: u256
     evidence: str  # JSON-serialized Evidence for onchain auditability
+    require_two_source: bool  # strict mode: registration needs 2 matching sources
 
 
 class Release(gl.Contract):
@@ -755,6 +756,7 @@ class ProvenanceRegistry(gl.Contract):
         verification_handle_1: str = "",
         verification_source_2: str = "",
         verification_handle_2: str = "",
+        require_two_source: bool = True,
     ) -> str:
         """
         Verify a wallet as belonging to a real human artist.
@@ -765,6 +767,11 @@ class ProvenanceRegistry(gl.Contract):
         (DISCO parity) — each resolves and cross-checks against the artist
         name, awarding W_TWO_SOURCE_MATCH if both match, W_SINGLE_SOURCE
         for one.
+
+        `require_two_source` (default True): strict mode — if fewer than two
+        claimed sources independently match, the score is capped at 5 (below
+        the 70 threshold), so registration is effectively rejected at
+        consensus. Set False for a relaxed single-source onboarding path.
         """
         def leader_collect() -> Evidence:
             # Read API credentials from contract storage once. Inside
@@ -871,6 +878,14 @@ class ProvenanceRegistry(gl.Contract):
 
         consensus_evidence = gl.vm.run_nondet_unsafe(leader_collect, validator_fn)
         score = _score_evidence(consensus_evidence, name)
+
+        # Layer 3 — strict two-source mode. When the artist opts in
+        # (require_two_source=True, the default), registration without two
+        # independently matching claimed sources is capped far below the
+        # verification threshold, so consensus rejects it.
+        if require_two_source and int(consensus_evidence.verification_match_count) < 2:
+            score = min(score, 5)
+
         sender = self._sender()
         now = self._now()
 
@@ -887,6 +902,7 @@ class ProvenanceRegistry(gl.Contract):
                 verified_at=u256(now),
                 score=u256(score),
                 evidence=consensus_evidence.to_json(),
+                require_two_source=require_two_source,
             )
             return f"Verified ({score})"
 
