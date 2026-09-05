@@ -29,8 +29,16 @@ npx esbuild entry.js --bundle --format=iife --platform=browser \
   address), not `{address: ...}` — the SDK's `getContractSchema()` sends a
   dict and gets a psycopg2 error. `app.js` boot() does the raw request with
   a fallback.
-- Reads use `readContract({ jsonSafeReturn: true })`; writes go through the
-  injected `window.ethereum` provider (e.g. 1inch wallet) with
-  `wallet_switchEthereumChain` to `0xf22f` (61999) on connect.
+- **No browser wallet needed on studionet.** Studio's 1inch pairing is
+  WalletConnect (QR) — no `window.ethereum` is injected, so "Connect
+  wallet" can't detect it. Studionet writes need **no gas**: a
+  zero-balance generated account successfully submitted `set_api_keys`
+  and `register_artist` (receipt status success, log emitted). The
+  frontend therefore offers a **local account mode** (key generated and
+  kept in localStorage) as the reliable write path; "Connect wallet"
+  remains for browsers that do have an injected provider.
+- Reads use `readContract({ jsonSafeReturn: true })`; writes go through
+  the active signer (local account or injected provider).
 - `register_artist` can land `UNDETERMINED` on studionet: validators
   independently re-fetch live APIs and results drift beyond tolerance.
+  Re-submission usually lands within a consensus round.

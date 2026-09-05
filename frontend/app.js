@@ -66,6 +66,36 @@ window.queryDispute = () => safeRead("disp", async () => {
 
 // ── Wallet connect ────────────────────────────────────────────────────────
 
+function shortAddr(a) { return a.slice(0, 6) + "…" + a.slice(-4); }
+
+function writeClientWithAccount(account) {
+  client = GL.createClient({ chain: GL.chains.studionet, account });
+}
+
+// Local account mode: key generated in-browser, kept in localStorage.
+// Safe for studionet test accounts (no gas, no real funds).
+const LS_KEY = "artistledger.localAccountPk";
+
+$("localAcctBtn").addEventListener("click", async () => {
+  try {
+    let pk = localStorage.getItem(LS_KEY);
+    let account = GL.createAccount(pk || undefined);
+    if (!pk) {
+      // createAccount without args generated a key; regenerate to capture it.
+      // SDK exposes generatePrivateKey separately.
+      pk = GL.generatePrivateKey();
+      account = GL.createAccount(pk);
+      localStorage.setItem(LS_KEY, pk);
+    }
+    walletAddr = account.address;
+    writeClientWithAccount(account);
+    $("walletLabel").textContent = shortAddr(walletAddr) + " (local)";
+    $("walletLabel").title = walletAddr;
+  } catch (e) {
+    $("walletLabel").textContent = "Local account failed: " + (e.message || e);
+  }
+});
+
 $("connectBtn").addEventListener("click", async () => {
   if (!window.ethereum) {
     $("walletLabel").textContent = "No wallet detected (window.ethereum missing)";

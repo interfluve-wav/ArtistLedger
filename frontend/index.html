@@ -83,6 +83,7 @@
     <span id="rpcStatus">Checking Studio RPC…</span>
     <span style="flex:1"></span>
     <button class="secondary" id="connectBtn">Connect wallet</button>
+    <button class="secondary" id="localAcctBtn">Use local account</button>
     <span id="walletLabel" style="color:var(--dim);font-family:var(--mono);font-size:12px"></span>
   </div>
 
@@ -170,8 +171,10 @@
     <summary>About this demo</summary>
     <div class="hint" style="margin-top:6px">
       Static frontend calling the GenLayer Studio RPC directly from the browser (CORS-verified).
-      Reads use <code>readContract</code>; writes go through your connected wallet via <code>writeContract</code>.
-      Contract source: <a href="https://github.com/interfluve-wav/ArtistLedger/blob/main/contracts/ProvenanceRegistry.py">interfluve-wav/ArtistLedger</a>.
+      Reads use <code>readContract</code>; writes go through either a connected
+      browser wallet (<code>window.ethereum</code>) or a locally generated account
+      (stored in your browser's localStorage — studionet needs no gas, verified
+      with a 0-balance account). Contract source: <a href="https://github.com/interfluve-wav/ArtistLedger/blob/main/contracts/ProvenanceRegistry.py">interfluve-wav/ArtistLedger</a>.
     </div>
   </details>
 </div>
