@@ -41,17 +41,14 @@ class ProvenanceRegistry:
 
 class UnverifiedProvenanceError(Exception):
     """The track has not been verified as human-made by ProvenanceRegistry."""
-    pass
 
 
 class ContestedReleaseError(Exception):
     """The track has an upheld dispute on ProvenanceRegistry."""
-    pass
 
 
 class ArtistMismatchError(Exception):
     """The claimed artist does not match the ProvenanceRegistry record."""
-    pass
 
 
 # ─── The pattern ──────────────────────────────────────────────────────────

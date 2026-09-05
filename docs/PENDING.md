@@ -150,9 +150,19 @@ unless `verification_match_count >= 2` — registration effectively rejected
 at consensus unless both claimed sources match. Set False to opt into
 relaxed single-source onboarding.
 
-## Layer 4 — find_artist.py updates
+## Layer 4 — IMPLEMENTED: find_artist.py DISCO glue
 
-Add `--disco-mode` (emit DISCO step-5 JSON shape) and `--two-source-report`.
+`examples/find_artist.py` (cherry-picked onto this branch from
+`sketches/v0.3.4-flow`) gained:
+- `--disco-mode` — emits the DISCO step-5 shape: all 13 enum types ->
+  `{url, handle, found}`. Shows what find_artist discovered vs. what the
+  artist must claim themselves.
+- `--two-source-report` — picks the two strongest discovered sources
+  (tier-1 real-verification types first) as ready-to-paste
+  `verification_source_1/2` + handles for `register_artist()`, with an
+  explanation string. Live-tested: Burial -> apple_music + bandcamp.
+- tiktok/ipi are marked not-discoverable (no free API path) — the artist
+  claims those manually.
 
 ## Future: make validation more real/proper (oAuth)
 

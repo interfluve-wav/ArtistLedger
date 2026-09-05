@@ -28,7 +28,8 @@ import json
 import os
 import re
 import sys
-from urllib.parse import urlparse, parse_qs, quote as _urlquote
+from urllib.parse import quote as _urlquote
+from urllib.parse import urlparse
 
 try:
     import requests
@@ -407,6 +408,110 @@ def find_artist(name: str, seeds: list[str]) -> dict:
     return source_urls
 
 
+# ── DISCO step-5 shape (Layer 4) ────────────────────────────────────────
+
+# The DISCO signup flow asks the artist to claim up to two of 13 source
+# types. Map the enriched fields find_artist discovers onto that enum so
+# the output can be pasted into register_artist() directly.
+DISCO_ENUM_KEYS = {
+    # disco enum type   -> (url-field in source_urls,    handle-field)
+    # Field names must match find_artist()'s output dict exactly.
+    "spotify":          ("",                             "spotify_artist_id"),
+    "apple_music":      ("apple_music_url",              "apple_music_artist_id"),
+    "soundcloud":       ("",                             "soundcloud"),
+    "bandcamp":         ("",                             "bandcamp"),
+    "instagram":        ("",                             "instagram"),
+    "tiktok":           ("",                             ""),  # not discoverable via free APIs
+    "tidal":            ("tidal_url",                    ""),
+    "twitter":          ("",                             "twitter_handle"),
+    "youtube":          ("",                             "youtube_channel"),
+    "facebook":         ("facebook_url",                 ""),
+    "website":          ("personal_url",                 ""),
+    "lastfm":           ("",                             "lastfm_user"),
+    "ipi":              ("",                             ""),  # needs PRO lookup, not discoverable
+}
+
+# Strength order for picking the two best cross-reference targets.
+# Only types the contract's _verify_claimed_source can actually dispatch
+# on (Spotify/Apple/Bandcamp/SoundCloud/Instagram/Last.fm get real
+# checks; TikTok/Tidal/FB/website too since Layer 2). Tier-1 real
+# verification sources first — they score highest in the contract.
+_SOURCE_STRENGTH = [
+    "spotify", "apple_music",
+    "bandcamp", "soundcloud", "lastfm",
+    "instagram", "tiktok", "tidal", "facebook", "website",
+    "twitter", "youtube",
+]
+
+
+def _disco_mode(source_urls: dict) -> dict:
+    """Emit the DISCO step-5 shape: every enum key -> {url, handle, found}.
+
+    This is what the frontend form step 5 asks for. ``found`` is True
+    when find_artist actually discovered a value (vs. the artist having
+    to claim it themselves).
+    """
+    out = {}
+    for enum_type, (url_field, handle_field) in DISCO_ENUM_KEYS.items():
+        url = source_urls.get(url_field, "") if url_field else ""
+        handle = source_urls.get(handle_field, "") if handle_field else ""
+        out[enum_type] = {
+            "url": url,
+            "handle": handle,
+            "found": bool(url or handle),
+        }
+    return out
+
+
+def _two_source_report(source_urls: dict) -> dict:
+    """Pick the two strongest discovered sources for verification_source_1/2.
+
+    Returns the exact args to pass to register_artist() plus a plain-
+    English explanation of why those two were chosen.
+    """
+    candidates = []
+    for enum_type in _SOURCE_STRENGTH:
+        entry = _disco_entry(source_urls, enum_type)
+        if entry["found"]:
+            candidates.append((enum_type, entry))
+    picks = candidates[:2]
+    if not picks:
+        return {
+            "verification_source_1": "", "verification_handle_1": "",
+            "verification_source_2": "", "verification_handle_2": "",
+            "explanation": "No sources discovered. Provide seeds or set up "
+                           "API keys to enrich.",
+        }
+    first = picks[0]
+    second = picks[1] if len(picks) > 1 else ("", {"url": "", "handle": ""})
+    report = {
+        "verification_source_1": first[0],
+        "verification_handle_1": first[1]["handle"] or first[1]["url"],
+    }
+    if second and second[0]:
+        report.update({
+            "verification_source_2": second[0],
+            "verification_handle_2": second[1]["handle"] or second[1]["url"],
+        })
+    else:
+        report.update({"verification_source_2": "", "verification_handle_2": ""})
+    names = [p[0] for p in picks if p[0]]
+    report["explanation"] = (
+        f"Best cross-reference pair: {' + '.join(names)}. "
+        f"Both resolve independently and their metadata should name-match "
+        f"the artist, giving W_TWO_SOURCE_MATCH (+15). "
+        f"Pass require_two_source=True (default) to enforce both."
+    )
+    return report
+
+
+def _disco_entry(source_urls: dict, enum_type: str) -> dict:
+    url_field, handle_field = DISCO_ENUM_KEYS[enum_type]
+    url = source_urls.get(url_field, "") if url_field else ""
+    handle = source_urls.get(handle_field, "") if handle_field else ""
+    return {"url": url, "handle": handle, "found": bool(url or handle)}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Find every URL an artist has online, given 1+ known URLs as seeds."
@@ -418,6 +523,15 @@ def main() -> None:
              "Pass multiple times for multiple seeds.",
     )
     ap.add_argument("--json", action="store_true", help="Print raw dict only")
+    ap.add_argument(
+        "--disco-mode", action="store_true",
+        help="Emit DISCO step-5 shape: every enum key -> {url, handle, found}",
+    )
+    ap.add_argument(
+        "--two-source-report", action="store_true",
+        help="Print the two strongest discovered sources as verification_source_1/2 "
+             "args for register_artist()",
+    )
     args = ap.parse_args()
 
     if not args.seed:
@@ -427,6 +541,14 @@ def main() -> None:
         )
     print(f"Looking up '{args.name}' with {len(args.seed)} seed(s) ...", file=sys.stderr)
     urls = find_artist(args.name, args.seed)
+
+    if args.disco_mode:
+        print(json.dumps(_disco_mode(urls), indent=2))
+        return
+    if args.two_source_report:
+        print(json.dumps(_two_source_report(urls), indent=2))
+        return
+
     found = {k: v for k, v in urls.items() if v}
     missing = {k: v for k, v in urls.items() if not v}
     print(json.dumps(urls, indent=2))

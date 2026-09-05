@@ -54,6 +54,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   claimed sources independently match, the score is capped at 5 — below
   the 70 threshold — so registration is rejected at consensus. Set False
   to opt into relaxed single-source onboarding.
+- **`find_artist.py` DISCO glue (Layer 4).** Two new flags:
+  `--disco-mode` emits the DISCO step-5 shape (all 13 enum types ->
+  `{url, handle, found}`) and `--two-source-report` picks the two
+  strongest discovered sources as ready-to-paste
+  `verification_source_1/2` args for `register_artist()`. Live-tested:
+  Burial resolves to apple_music + bandcamp. Also added repo-wide ruff
+  config (per-file BLE001/S110 ignore for examples/, fail-quiet by design).
 
 ### Known issues (still open)
 

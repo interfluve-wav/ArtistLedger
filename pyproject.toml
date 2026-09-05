@@ -45,3 +45,12 @@ contracts = ["py.typed"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# examples/ is a fail-quiet discovery tool: broad except + pass is the
+# intentional design (same convention as contracts/, which uses noqa).
+per-file-ignores = { "examples/*" = ["BLE001", "S110"] }

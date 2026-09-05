@@ -16,7 +16,8 @@ tests/test_provenance.py.
 
 import os
 import time
-from genlayer import Client, Address
+
+from genlayer import Address, Client
 
 ARTIST_DID = "did:web:skee.mask"
 ARTIST_NAME = "Skee Mask"
