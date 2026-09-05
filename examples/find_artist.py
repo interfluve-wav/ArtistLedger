@@ -441,6 +441,8 @@ _SOURCE_STRENGTH = [
     "bandcamp", "soundcloud", "lastfm",
     "instagram", "tiktok", "tidal", "facebook", "website",
     "twitter", "youtube",
+    # NOTE: "ipi" is intentionally absent — it is never discoverable via
+    # free APIs (needs a PRO lookup), so it can never be a "found" pick.
 ]
 
 
@@ -451,16 +453,7 @@ def _disco_mode(source_urls: dict) -> dict:
     when find_artist actually discovered a value (vs. the artist having
     to claim it themselves).
     """
-    out = {}
-    for enum_type, (url_field, handle_field) in DISCO_ENUM_KEYS.items():
-        url = source_urls.get(url_field, "") if url_field else ""
-        handle = source_urls.get(handle_field, "") if handle_field else ""
-        out[enum_type] = {
-            "url": url,
-            "handle": handle,
-            "found": bool(url or handle),
-        }
-    return out
+    return {enum_type: _disco_entry(source_urls, enum_type) for enum_type in DISCO_ENUM_KEYS}
 
 
 def _two_source_report(source_urls: dict) -> dict:
@@ -493,15 +486,20 @@ def _two_source_report(source_urls: dict) -> dict:
             "verification_source_2": second[0],
             "verification_handle_2": second[1]["handle"] or second[1]["url"],
         })
+        report["explanation"] = (
+            f"Best cross-reference pair: {first[0]} + {second[0]}. "
+            f"Both resolve independently and their metadata should name-match "
+            f"the artist, giving W_TWO_SOURCE_MATCH (+15). "
+            f"Pass require_two_source=True (default) to enforce both."
+        )
     else:
         report.update({"verification_source_2": "", "verification_handle_2": ""})
-    names = [p[0] for p in picks if p[0]]
-    report["explanation"] = (
-        f"Best cross-reference pair: {' + '.join(names)}. "
-        f"Both resolve independently and their metadata should name-match "
-        f"the artist, giving W_TWO_SOURCE_MATCH (+15). "
-        f"Pass require_two_source=True (default) to enforce both."
-    )
+        report["explanation"] = (
+            f"Only one source discovered ({first[0]}). It scores "
+            f"W_SINGLE_SOURCE_MATCH (+8) alone; with require_two_source=True "
+            f"(default) registration will be rejected — claim a second source "
+            f"manually or pass require_two_source=False."
+        )
     return report
 
 
