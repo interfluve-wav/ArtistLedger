@@ -340,6 +340,80 @@ def _instagram_check(handle: str) -> str:
         return ""
 
 
+def _regex_any(body: str, patterns: tuple[str, ...]) -> str:
+    """Return the first regex match group 1 across several patterns."""
+    import re
+    for p in patterns:
+        m = re.search(p, body)
+        if m and m.group(1):
+            return m.group(1)
+    return ""
+
+
+def _ipi_checksum_valid(raw: str | None) -> bool:
+    """Validate an IPI name number via the CISAC mod-101 checksum.
+
+    IPI name numbers are 11 digits: 9 base digits + 2 checksum digits. Total =
+    sum(digit[i] * (10 - i) for the first 9) mod 101; if nonzero, checksum =
+    (101 - total) % 100. Verified against canonical examples
+    (01234567846, 00123456790 are valid; a random 11-digit is not).
+    """
+    d = "".join(ch for ch in str(raw or "") if ch.isdigit())
+    if len(d) != 11:
+        return False
+    total = 0
+    for i in range(9):
+        total += int(d[i]) * (10 - i)
+    total %= 101
+    if total != 0:
+        total = (101 - total) % 100
+    return f"{total:02d}" == d[-2:]
+
+
+def _tiktok_name(handle: str) -> str:
+    """Extract the profile display name from a TikTok page's embedded JSON."""
+    if not handle:
+        return ""
+    try:
+        body = _http_get(f"https://www.tiktok.com/@{handle}")
+        # Use the __UNIVERSAL_DATA / __NEXT_DATA JSON; grab nickname or uniqueId
+        nm = _regex_any(body, (
+            r'"nickname"\s*:\s*"([^"]{1,80})"',
+            r'"uniqueId"\s*:\s*"([^"]{1,80})"',
+            r'<meta content="([^"]{1,80})" property="og:title"',
+        ))
+        if nm and nm.lower().strip() not in ("", "tiktok"):
+            return nm
+        return ""
+    except Exception:
+        return ""
+
+
+def _page_exists(url: str) -> bool:
+    """Return True if a public URL returns HTTP 200 (existence check)."""
+    if not url:
+        return False
+    try:
+        body = _http_get(url)
+        # some sites return 200 with a 404 body for unknown resources
+        if "404" in body[:4000].lower() or "page not found" in body[:4000].lower():
+            return False
+        return bool(body)
+    except Exception:
+        return False
+
+
+def _site_crossrefs(url: str, name: str) -> bool:
+    """Best-effort: does a personal website page reference the artist name?"""
+    if not url or not name:
+        return False
+    try:
+        body = _http_get(url).lower()
+        return bool(body) and name.lower() in body
+    except Exception:
+        return False
+
+
 def _verify_claimed_source(
     source_type: str, handle: str, artist_name: str,
     spotify_token: str, lastfm_key: str,
@@ -351,11 +425,14 @@ def _verify_claimed_source(
       - Spotify: search returns the same artist id as the claimed URL/id
       - Apple Music: artist resolves and the matched name is >= 3 chars
       - Bandcamp: page exists AND the parsed page name overlaps the claim
-      - SoundCloud / Instagram: genuine name binding needs their private
-        APIs; Layer 1 checks HTTP existence only (documented limitation),
-        so the signal is weaker — Layer 2 adds real handles/name scrapes.
-    Sources without any deep check (TikTok, Tidal, Facebook, website,
-    Twitter, YouTube) are claim-only and return False.
+      - Last.fm: the claimed user has scrobble history for this artist
+      - TikTok: page's embedded display name overlaps the claim (best-effort)
+      - Tidal / Facebook: HTTP existence (their APIs are closed)
+      - SoundCloud / Instagram: HTTP existence only (name binding needs
+        private APIs; documented limitation)
+      - website: page exists AND mentions the claimed name
+      - IPI: CISAC mod-101 checksum on the 11-digit number
+      - Twitter / YouTube: claim-only (no public name-check without API keys)
 
     Returns True only when the source independently resolves to the claimed
     artist name.
@@ -402,9 +479,30 @@ def _verify_claimed_source(
         # that user is a genuine listener/ownership signal (needs the key).
         # at least some scrobble history binds the user to the artist
         return _lastfm_scrobbles(artist_name, handle, lastfm_key) > 0
+    if st in ("tiktok_handle", "tiktok"):
+        h = handle.rstrip("/").split("/")[-1].lstrip("@")
+        if not h:
+            return False
+        # bind via the page's embedded display name (best-effort)
+        nm = _tiktok_name(h)
+        if not nm:
+            return False
+        return _name_token_overlap(nm, artist_name) >= 0.5
+    if st in ("tidal_music_url", "tidal"):
+        # Tidal has no public API; an artist URL resolving counts
+        return _page_exists(handle)
+    if st in ("facebook_url", "facebook"):
+        # Facebook HTML isn't parseable without login; existence only
+        return _page_exists(handle)
+    if st in ("website_url", "website", "personal_url"):
+        # personal site exists AND mentions the claimed name
+        return _site_crossrefs(handle, artist_name)
+    if st in ("ipi_number", "ipi"):
+        # IPI base/name number: validate the CISAC mod-101 checksum
+        return _ipi_checksum_valid(handle)
 
     # Source with no verifiable name cross-check yet — claim-only. Layer 2
-    # adds TikTok scrape, Tidal/Facebook/website 200-checks, IPI checksum.
+    # leaves Twitter/YouTube here (no public name-check without API keys).
     return False
 
 

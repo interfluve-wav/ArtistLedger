@@ -130,14 +130,18 @@ here.
   (TikTok/Tidal/Facebook/website/Twitter/YouTube) return False → Layer 2.
 - Scoring: 2 matches → `W_TWO_SOURCE_MATCH`, 1 match → `W_SINGLE_SOURCE_MATCH`.
 
-## Layer 2 — TODO: TikTok + Tidal + IPI + Facebook + website real checks
+## Layer 2 — IMPLEMENTED: TikTok + Tidal + IPI + Facebook + website real checks
 
-Extend `_verify_claimed_source` so claim-only sources get real checks:
-- TikTok: scrape `tiktok.com/@{handle}` embedded JSON (followerCount + name)
-- Tidal: 200-check artist URL
-- IPI: ISO 7172 mod-101 checksum validation (`W_IPI` when valid)
-- Facebook: 200-check (HTML not parseable without login)
-- website: 200-check + cross-ref regex for bandcamp/spotify/discogs links
+`_verify_claimed_source` now has real checks for the previously claim-only
+sources:
+- **IPI**: `_ipi_checksum_valid` — CISAC mod-101 on the 11-digit IPI name
+  number (validated against canonical examples)
+- **TikTok**: `_tiktok_name` scrapes the embedded JSON (`nickname` /
+  `uniqueId` / og:title) and binds it to the claim via token overlap
+- **Tidal / Facebook**: `_page_exists` HTTP 200 existence check (closed APIs)
+- **website**: `_site_crossrefs` — page exists AND mentions the claimed name
+- SoundCloud / Instagram: kept existence-only (private APIs; documented)
+- Twitter / YouTube: claim-only pending API keys
 
 ## Layer 3 — Two-source strict mode (configurable)
 

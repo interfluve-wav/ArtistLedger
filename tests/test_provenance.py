@@ -40,7 +40,9 @@ from contracts.ProvenanceRegistry import (
     DynArray,
     Evidence,
     ProvenanceRegistry,
+    _ipi_checksum_valid,
     _name_token_overlap,
+    _regex_any,
     _score_evidence,
     u256,
 )
@@ -310,6 +312,24 @@ def test_score_two_source_stacks_with_tier1():
     ev.verification_match_count = u256(2)
     ev.bandcamp_handle = "skeemask"
     assert _score_evidence(ev, "X") == W_TWO_SOURCE_MATCH + W_BANDCAMP
+
+
+def test_ipi_checksum_valid_canonical_examples():
+    assert _ipi_checksum_valid("01234567846") is True
+    assert _ipi_checksum_valid("00123456790") is True
+
+
+def test_ipi_checksum_rejects_bad_or_malformed():
+    assert _ipi_checksum_valid("00479499931") is False  # random/demo 11-digit
+    assert _ipi_checksum_valid("12345") is False
+    assert _ipi_checksum_valid("") is False
+    assert _ipi_checksum_valid(None) is False
+
+
+def test_regex_any_returns_first_group():
+    assert _regex_any('{"nickname": "A B"}', (r'"nickname"\s*:\s*"([^"]+)"',)) == "A B"
+    assert _regex_any('<meta content="X" property="og:title">', (r'<meta content="([^"]+)" property="og:title"',)) == "X"
+    assert _regex_any("nothing here", (r'"nickname"\s*:\s*"([^"]+)"',)) == ""
 
 
 def test_score_wallet_age_90_days():

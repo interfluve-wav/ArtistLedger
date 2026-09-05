@@ -43,6 +43,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `W_TWO_SOURCE_MATCH` (15) for 2 matches, `W_SINGLE_SOURCE_MATCH` (8)
   for 1. Tier-2 rebalanced (bandcamp 5→3, soundcloud 5→3, instagram
   5→2, lastfm 5→2) to hold the 100 deterministic cap.
+- **Two-source verification hardens (Layer 2).** `_verify_claimed_source`
+  no longer returns claim-only `False` for most platforms — added real
+  checks: IPI CISAC mod-101 checksum, TikTok profile-name scrape (embedded
+  JSON), Tidal + Facebook HTTP existence, personal-website name mention.
+  SoundCloud/Instagram stay existence-only (private APIs; documented).
+  Twitter/YouTube remain claim-only pending API keys.
 
 ### Known issues (still open)
 
