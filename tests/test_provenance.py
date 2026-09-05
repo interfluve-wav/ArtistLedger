@@ -17,7 +17,7 @@ Each test mocks the underlying API functions directly so the contract
 logic is tested in isolation from network access.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -89,6 +89,9 @@ def make_evidence(
     bandcamp="skeemask", bandcamp_real="Skee Mask", bandcamp_loc="Berlin",
     soundcloud="skeemask", soundcloud_followers=2000, soundcloud_verified=False,
     instagram="skeemask", lastfm_scrobbles=500,
+    verification_source_1="", verification_handle_1="",
+    verification_source_2="", verification_handle_2="",
+    verification_match_count=0,
     wallet_age=200, ens_name="skeemask.eth", ens_matches=True,
     farcaster="skeemask", press_score=3,
 ):
@@ -113,6 +116,11 @@ def make_evidence(
         soundcloud_verified=soundcloud_verified,
         instagram_handle=instagram,
         lastfm_scrobble_count=u256(lastfm_scrobbles),
+        verification_source_1=verification_source_1,
+        verification_handle_1=verification_handle_1,
+        verification_source_2=verification_source_2,
+        verification_handle_2=verification_handle_2,
+        verification_match_count=u256(verification_match_count),
         wallet_age_days=u256(wallet_age),
         ens_name=ens_name,
         ens_matches_artist=ens_matches,
@@ -130,6 +138,7 @@ def _make_artist(wallet, *, score=80):
         verified_at=u256(1000),
         score=u256(score),
         evidence="{}",
+        require_two_source=True,
     )
 
 
@@ -167,7 +176,7 @@ def test_name_token_overlap_identical():
 
 
 def test_name_token_overlap_partial():
-    s = _name_token_overlap("skeemask.eth", "Skee Mask")
+    s = _name_token_overlap("Burial Four Tet", "Burial")
     assert 0.0 < s < 1.0
 
 
@@ -183,10 +192,19 @@ def test_name_token_overlap_empty():
 # ─── _score_evidence ───────────────────────────────────────────────────────
 
 
-def test_score_full_evidence_reaches_100_plus_llm_bonus():
-    ev = make_evidence(press_score=5)
+def test_score_full_evidence_reaches_max_85():
+    # Max deterministic is 80 (Tier1 45 + Tier2 10 + two-source 15 + wallet 10)
+    # plus LLM +5 = 85. The score is clamped to [0, 100].
+    ev = make_evidence(
+        press_score=5,
+        verification_source_1="spotify_url",
+        verification_handle_1="spotify123",
+        verification_source_2="bandcamp_url",
+        verification_handle_2="skeemask",
+        verification_match_count=2,
+    )
     score = _score_evidence(ev, "Skee Mask")
-    assert score == 100
+    assert score == 85
 
 
 def test_score_min_evidence_is_zero():
@@ -381,7 +399,7 @@ def test_score_70_threshold_achievable_with_minimal_real_artist():
         lastfm_scrobbles=100,
         wallet_age=200,
         ens_matches=True,
-        press_score=0,
+        press_score=5,
     )
     assert _score_evidence(ev, "Skee Mask") == 70
 
@@ -406,14 +424,21 @@ def test_register_artist_verified_when_score_reaches_70(
          patch("contracts.ProvenanceRegistry._ens_data", return_value=("skeemask.eth", True)), \
          patch("contracts.ProvenanceRegistry._farcaster_fname", return_value="skeemask"), \
          patch("contracts.ProvenanceRegistry._llm_qualitative_adjustment", return_value=3), \
+         patch("contracts.ProvenanceRegistry._verify_claimed_source", return_value=True), \
          patch.object(contract, "_sender", return_value=artist_wallet), \
          patch.object(contract, "_now", return_value=1000):
+        # Two matching claimed sources (+15) → 68 + 15 + 3 = 86 ≥ 70 under
+        # strict mode.
         result = contract.register_artist(
             did="did:web:skee.mask",
             name="Skee Mask",
             audio_hash=audio_hash,
             source_urls=source_urls,
             wallet=artist_wallet,
+            verification_source_1="spotify_url",
+            verification_handle_1="sp1",
+            verification_source_2="bandcamp_url",
+            verification_handle_2="skeemask",
         )
     assert "Verified" in result
     assert artist_wallet in contract.artists
@@ -451,25 +476,24 @@ def test_register_artist_not_verified_when_no_signals(
 def test_strict_two_source_mode_caps_score_below_threshold(
     contract, artist_wallet, audio_hash, source_urls
 ):
-    """Layer 3: single-source registration capped at 5 under strict mode."""
-    # Produce a score just above 70 (e.g., acoustid=20, wallet_age=5, LLM=3 = 28)
+    """Layer 3: full signals but zero matching claimed sources → capped at 5."""
     with patch("contracts.ProvenanceRegistry._acoustid_lookup", return_value=(True, "mbid-1")), \
-         patch("contracts.ProvenanceRegistry._musicbrainz_isrc", return_value=DynArray()), \
-         patch("contracts.ProvenanceRegistry._spotify_search", return_value={}), \
-         patch("contracts.ProvenanceRegistry._apple_music_search", return_value=("", False)), \
-         patch("contracts.ProvenanceRegistry._bandcamp_check", return_value=("", "", "")), \
-         patch("contracts.ProvenanceRegistry._soundcloud_check", return_value=("", 0, False)), \
-         patch("contracts.ProvenanceRegistry._instagram_check", return_value=""), \
-         patch("contracts.ProvenanceRegistry._lastfm_scrobbles", return_value=0), \
-         patch("contracts.ProvenanceRegistry._wallet_age_days", return_value=100), \
-         patch("contracts.ProvenanceRegistry._ens_data", return_value=("", False)), \
-         patch("contracts.ProvenanceRegistry._farcaster_fname", return_value=""), \
-         patch("contracts.ProvenanceRegistry._llm_qualitative_adjustment", return_value=3), \
+         patch("contracts.ProvenanceRegistry._musicbrainz_isrc", return_value=DynArray(["ISRC123"])), \
+         patch("contracts.ProvenanceRegistry._spotify_search", return_value={
+             "id": "sp1", "verified": True, "followers": {"total": 5000}, "popularity": 45
+         }), \
+         patch("contracts.ProvenanceRegistry._apple_music_search", return_value=("ap1", True)), \
+         patch("contracts.ProvenanceRegistry._bandcamp_check", return_value=("skeemask", "Skee Mask", "Berlin")), \
+         patch("contracts.ProvenanceRegistry._soundcloud_check", return_value=("skeemask", 2000, True)), \
+         patch("contracts.ProvenanceRegistry._instagram_check", return_value="skeemask"), \
+         patch("contracts.ProvenanceRegistry._lastfm_scrobbles", return_value=500), \
+         patch("contracts.ProvenanceRegistry._wallet_age_days", return_value=200), \
+         patch("contracts.ProvenanceRegistry._ens_data", return_value=("skeemask.eth", True)), \
+         patch("contracts.ProvenanceRegistry._farcaster_fname", return_value="skeemask"), \
+         patch("contracts.ProvenanceRegistry._llm_qualitative_adjustment", return_value=5), \
          patch.object(contract, "_sender", return_value=artist_wallet), \
-         patch.object(contract, "_now", return_value=1000), \
-         patch("genlayer.vm.run_nondet_unsafe", return_value=MagicMock(
-             verification_match_count=u256(0),
-         )):
+         patch.object(contract, "_now", return_value=1000):
+        # No verification_source_1/2 → match count 0 → strict mode caps score at 5.
         result = contract.register_artist(
             did="did:web:single.source",
             name="Single Source",
@@ -480,29 +504,29 @@ def test_strict_two_source_mode_caps_score_below_threshold(
         )
     assert "Not verified" in result
     assert artist_wallet not in contract.artists
+    assert contract.identity_score[artist_wallet] == u256(5)
 
 
 def test_relaxed_two_source_mode_allows_single_source(
     contract, artist_wallet, audio_hash, source_urls
 ):
-    """Layer 3: with require_two_source=False, single-source scores pass."""
+    """Layer 3: require_two_source=False — full signals pass with 0 matches."""
     with patch("contracts.ProvenanceRegistry._acoustid_lookup", return_value=(True, "mbid-1")), \
-         patch("contracts.ProvenanceRegistry._musicbrainz_isrc", return_value=DynArray()), \
-         patch("contracts.ProvenanceRegistry._spotify_search", return_value={}), \
-         patch("contracts.ProvenanceRegistry._apple_music_search", return_value=("", False)), \
+         patch("contracts.ProvenanceRegistry._musicbrainz_isrc", return_value=DynArray(["ISRC123"])), \
+         patch("contracts.ProvenanceRegistry._spotify_search", return_value={
+             "id": "sp1", "verified": True, "followers": {"total": 5000}, "popularity": 45
+         }), \
+         patch("contracts.ProvenanceRegistry._apple_music_search", return_value=("ap1", True)), \
          patch("contracts.ProvenanceRegistry._bandcamp_check", return_value=("skeemask", "Skee Mask", "Berlin")), \
          patch("contracts.ProvenanceRegistry._soundcloud_check", return_value=("skeemask", 2000, True)), \
          patch("contracts.ProvenanceRegistry._instagram_check", return_value="skeemask"), \
-         patch("contracts.ProvenanceRegistry._lastfm_scrobbles", return_value=0), \
+         patch("contracts.ProvenanceRegistry._lastfm_scrobbles", return_value=500), \
          patch("contracts.ProvenanceRegistry._wallet_age_days", return_value=200), \
-         patch("contracts.ProvenanceRegistry._ens_data", return_value=("skee.mask", True)), \
+         patch("contracts.ProvenanceRegistry._ens_data", return_value=("skeemask.eth", True)), \
          patch("contracts.ProvenanceRegistry._farcaster_fname", return_value="skeemask"), \
-         patch("contracts.ProvenanceRegistry._llm_qualitative_adjustment", return_value=0), \
+         patch("contracts.ProvenanceRegistry._llm_qualitative_adjustment", return_value=5), \
          patch.object(contract, "_sender", return_value=artist_wallet), \
-         patch.object(contract, "_now", return_value=1000), \
-         patch("genlayer.vm.run_nondet_unsafe", return_value=MagicMock(
-             verification_match_count=u256(0),
-         )):
+         patch.object(contract, "_now", return_value=1000):
         result = contract.register_artist(
             did="did:web:skee.mask",
             name="Skee Mask",
@@ -515,7 +539,6 @@ def test_relaxed_two_source_mode_allows_single_source(
     assert artist_wallet in contract.artists
     assert contract.artists[artist_wallet].score >= 70
     assert contract.identity_count[artist_wallet] == 1
-    assert contract.identity_score[artist_wallet] == u256(0)
 
 
 # ─── anchor_release ────────────────────────────────────────────────────────
@@ -564,7 +587,8 @@ def test_anchor_release_rejects_duplicate_hash(contract, artist_wallet):
 def test_dispute_upheld_marks_contested_and_penalizes(
     contract, artist_wallet, attacker_wallet
 ):
-    contract.artists[artist_wallet] = _make_artist(artist_wallet, score=80)
+    contract.artists[artist_wallet] = _make_artist(artist_wallet, score=75)
+    contract.identity_score[artist_wallet] = u256(75)
     audio_hash = b"\x05" * 32
     contract.releases[audio_hash] = _make_release(artist_wallet, audio_hash)
 
@@ -580,7 +604,8 @@ def test_dispute_upheld_marks_contested_and_penalizes(
         )
     assert "upheld" in result
     assert contract.releases[audio_hash].contested is True
-    assert contract.identity_score[artist_wallet] == 80 - REPUTATION_PENALTY_PER_UPHELD_DISPUTE
+    assert contract.identity_score[artist_wallet] == 75 - REPUTATION_PENALTY_PER_UPHELD_DISPUTE
+    # 65 < 70 → verification revoked
     assert contract.artists[artist_wallet].verified_at == u256(0)
 
 
@@ -588,6 +613,7 @@ def test_dispute_dismissed_leaves_release_clean(
     contract, artist_wallet, attacker_wallet
 ):
     contract.artists[artist_wallet] = _make_artist(artist_wallet, score=80)
+    contract.identity_score[artist_wallet] = u256(80)
     audio_hash = b"\x06" * 32
     contract.releases[audio_hash] = _make_release(artist_wallet, audio_hash)
 
@@ -682,6 +708,7 @@ def test_get_release_unknown(contract):
 
 def test_get_dispute(contract, artist_wallet, attacker_wallet):
     contract.artists[artist_wallet] = _make_artist(artist_wallet, score=80)
+    contract.identity_score[artist_wallet] = u256(80)
     audio_hash = b"\x0f" * 32
     contract.releases[audio_hash] = _make_release(artist_wallet, audio_hash)
 

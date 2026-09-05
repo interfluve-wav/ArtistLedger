@@ -19,7 +19,13 @@ expected impact on verification correctness.
 
 ## Required before testnet deploy
 
-*(none — the two required items have landed in v0.3.3)*
+- **GenVM deploy compatibility (DONE).** Blank line after the runner
+  comment, single `gl.Contract` subclass per file (Artist/Release/
+  Dispute → `@allow_storage @dataclass`), `__init__` added. Verified:
+  Studio's live `gen_getContractSchemaForCode` returns SCHEMA-OK with
+  all 8 methods on GenVM v0.2.16.
+- **Faucet-funded wallet (DONE — user wallet, 100 GEN on Bradbury).**
+- **AcoustID API key** — still needed out-of-band for live scoring.
 
 ## Required before broad release (not blocking testnet)
 

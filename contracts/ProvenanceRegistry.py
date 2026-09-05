@@ -1,4 +1,5 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
+
 # ruff: noqa: BLE001,S110
 """
 OnChainProvenanceRegistry — GenLayer Intelligent Contract v0.2.0
@@ -37,8 +38,13 @@ from datetime import datetime
 from genlayer import *
 
 # ─── Storage layouts ───────────────────────────────────────────────────────
+# GenVM allows exactly ONE gl.Contract subclass per contract file (the
+# registry itself). Entity records are plain @allow_storage dataclasses,
+# which TreeMap stores natively (same pattern as Evidence below).
 
-class Artist(gl.Contract):
+@allow_storage
+@dataclass
+class Artist:
     wallet: Address
     did: str
     name: str
@@ -48,7 +54,9 @@ class Artist(gl.Contract):
     require_two_source: bool  # strict mode: registration needs 2 matching sources
 
 
-class Release(gl.Contract):
+@allow_storage
+@dataclass
+class Release:
     artist: Address
     title: str
     audio_hash: bytes
@@ -58,7 +66,9 @@ class Release(gl.Contract):
     contested: bool
 
 
-class Dispute(gl.Contract):
+@allow_storage
+@dataclass
+class Dispute:
     audio_hash: bytes
     claimant: Address
     claim: str
@@ -701,6 +711,14 @@ class ProvenanceRegistry(gl.Contract):
     spotify_token: str
     lastfm_key: str
     etherscan_key: str
+
+    def __init__(self):
+        """Schema constructor (required by GenVM). API keys default to
+        empty so reads before `set_api_keys` fail quiet (no signal)."""
+        self.acoustid_key = ""
+        self.spotify_token = ""
+        self.lastfm_key = ""
+        self.etherscan_key = ""
 
     def _now(self) -> int:
         """Consensus-safe transaction timestamp (unix seconds).

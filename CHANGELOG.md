@@ -6,6 +6,29 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed (GenVM deploy compatibility)
+
+- **Contract was rejected by GenVM v0.2.16 with `invalid_contract` on
+  schema extraction.** Three issues, verified against the real parser
+  (`genvm executor/src/runners/parse.rs`) and Studio's live
+  `gen_getContractSchemaForCode` RPC:
+  1. GenVM concatenates ALL consecutive leading `#` lines into one
+     JSON runner comment. Our `# ruff: noqa` line directly under the
+     `Depends` line broke the JSON parse → added a blank line between
+     them.
+  2. GenVM allows exactly ONE `gl.Contract` subclass per file
+     (`only one contract is allowed`). `Artist`, `Release`, `Dispute`
+     are now `@allow_storage @dataclass` records (TreeMap stores them
+     natively, same pattern as `Evidence`).
+  3. Schema extraction requires `__init__` on the contract class.
+     Added one that defaults the four API-key fields to `""` (reads
+     before `set_api_keys` fail quiet).
+- **Test suite could never run locally** (empty `genlayer` stub). Now
+  runs against a functional stub: 56/56 pass. Fixed stale assertions:
+  max score is 85 (not 100), strict two-source cap path, dispute
+  penalty at score 75 (80−10=70 stays verified, which the old test
+  asserted incorrectly).
+
 ### Fixed (v0.3.3)
 
 - **`Evidence.to_json` would throw on `DynArray` and `u256` values** because
