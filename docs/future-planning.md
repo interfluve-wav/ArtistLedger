@@ -129,6 +129,55 @@ Spotify/DISCO OAuth achieves, done with plain web scraping.
 - Note: proof-of-control (C) gets 80% of this value with no OAuth infra —
   do C first, OAuth later if ever.
 
+## Roadmap-derived ideas (added 2026-09-05, from genlayer.com/blog/genlayer-roadmap-to-mainnet)
+
+### R1. Position for the Mainnet migration (Bradbury → Clarke)
+The roadmap (Dec 2025) names testnets Asimov (infra, volatile),
+**Bradbury (AI focus, for validators/builders)** and **Clarke (mainnet
+release candidate, stable, subsidized)**. We're on **studionet** (Studio's
+simulated chain, 61999) — not any official testnet. Near-term action
+belongs in R1a; the rest are direction-setting.
+
+- **R1a. Re-deploy onto an official testnet before mainnet.**
+  stduionet is fine for dev, but the roadmap's fee work ("gas, penalties
+  and rewards... final step") means our zero-gas studionet writes will
+  cost real gas on mainnet. Testnet-Clarke (stable, subsidized) is the
+  natural pre-mainnet home. Keep the contract GenVM-compatible — the
+  existing fixes already pass Studio's v0.2.16 GenVM, and that interface
+  is stable across testnets.
+- Fee budgeting: `register_artist` fires 8+ live HTTP calls per validator;
+  on a fee network, validators pay for those. Consider minimizing
+  non-deterministic calls and caching evidence — becomes a real design
+  constraint, not a free-for-all.
+
+### R2. Expose the protocol's appeal/tribunal path
+The roadmap's centerpiece is Optimistic Democracy: commit-and-reveal,
+rotations, **appeals**. Our `dispute()` is a single LLM judge with a
+fixed verdict. If a dispute is dismissed (or an appeal is justified), the
+network itself has an appeal path. Frontend/contract idea: an
+`appeal(txId)` flow so a rejected claimant can route to the protocol's
+own appeal mechanics instead of our one-judge verdict being final.
+
+### R3. Greybox plugin for validator sanity (LUA middleware)
+GenVM validators can run optional **greyboxing** LUA scripts to sanity-
+check non-deterministic results before accepting. A greybox script that
+bounds our evidence (reject absurd follower counts, clamp LLM judge
+outputs ±5, reject degenerate scores) would make our contract easier for
+validators to accept and reduce the UNDETERMINED drift we saw on
+studionet.
+
+### R4. LayerZero bridge — provenance as cross-chain infra
+Per "Opening GenLayer to All Blockchains" (Dec 2025): GenLayer +
+LayerZero lets Intelligent Contracts feed real-world data to *any* chain.
+ArtistLedger could become an oracle: register/verify on GenLayer, then
+post a signed verdict ("this artist/audio is human, score 82, evidence
+hash ...") cross-chain via LayerZero. Turns the app into infra
+(provenance-as-a-service) — the natural mainnet-native end state. Large
+scope; park until the core is on an official testnet.
+
+(These are direction-setting; A–H above remain the scoped v0.4 work
+items. R1a is the only near-term action.)
+
 ## Not pursued
 
 - **On-chain AI-audio detection** (spectral artifact checks): unreliable
