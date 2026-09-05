@@ -31,8 +31,10 @@ from contracts.ProvenanceRegistry import (
     W_ISRC,
     W_LASTFM,
     W_LLM_ADJUSTMENT_RANGE,
+    W_SINGLE_SOURCE_MATCH,
     W_SOUNDCLOUD,
     W_SPOTIFY,
+    W_TWO_SOURCE_MATCH,
     W_WALLET_AGE,
     W_WALLET_NAME,
     DynArray,
@@ -273,6 +275,41 @@ def test_score_lastfm_below_threshold_no_credit():
     ev = Evidence.empty()
     ev.lastfm_scrobble_count = u256(99)
     assert _score_evidence(ev, "X") == 0
+
+
+def test_score_two_source_both_match():
+    ev = Evidence.empty()
+    ev.verification_source_1 = "spotify_url"
+    ev.verification_handle_1 = "abc123"
+    ev.verification_source_2 = "bandcamp_url"
+    ev.verification_handle_2 = "skeemask"
+    ev.verification_match_count = u256(2)
+    assert _score_evidence(ev, "X") == W_TWO_SOURCE_MATCH
+
+
+def test_score_two_source_single_match():
+    ev = Evidence.empty()
+    ev.verification_source_1 = "spotify_url"
+    ev.verification_handle_1 = "abc123"
+    ev.verification_source_2 = "bandcamp_url"
+    ev.verification_handle_2 = "skeemask"
+    ev.verification_match_count = u256(1)
+    assert _score_evidence(ev, "X") == W_SINGLE_SOURCE_MATCH
+
+
+def test_score_two_source_zero_match_no_credit():
+    ev = Evidence.empty()
+    ev.verification_source_1 = "spotify_url"
+    ev.verification_handle_1 = "abc123"
+    ev.verification_match_count = u256(0)
+    assert _score_evidence(ev, "X") == 0
+
+
+def test_score_two_source_stacks_with_tier1():
+    ev = Evidence.empty()
+    ev.verification_match_count = u256(2)
+    ev.bandcamp_handle = "skeemask"
+    assert _score_evidence(ev, "X") == W_TWO_SOURCE_MATCH + W_BANDCAMP
 
 
 def test_score_wallet_age_90_days():

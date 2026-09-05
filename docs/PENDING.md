@@ -111,3 +111,75 @@ real-world data. Item 7 is cosmetic.
 When work begins, copy this file's contents to `docs/v0.3.3.md` (or
 `docs/CHANGELOG.md` v0.3.3 entry) and clear the corresponding section
 here.
+
+---
+
+# v0.3.4 — Two-source verification (in progress, `feat/v0.3.4-twosource`)
+
+## Layer 1 — IMPLEMENTED (Apple Music fix + two-source fields/scoring)
+
+- `_apple_music_search` fixed: `entity=musicTrack&limit=5` + `name in
+  artistName` co-artist guard (Layer 0). `W_APPLE_MUSIC` now awardable.
+- New `Evidence` fields: `verification_source_1/2`, `verification_handle_1/2`
+  (str), `verification_match_count` (u256).
+- New weights `W_TWO_SOURCE_MATCH=15`, `W_SINGLE_SOURCE_MATCH=8`; Tier-2
+  rebalanced (bandcamp/soundcloud 5→3, instagram 5→2, lastfm 5→2).
+- `register_artist` takes 4 optional two-source args (defaults "").
+- `_verify_claimed_source` dispatches on the DISCO 13-enum; resolves
+  Spotify/Apple/Bandcamp/SoundCloud/Instagram; claim-only sources
+  (TikTok/Tidal/Facebook/website/Twitter/YouTube) return False → Layer 2.
+- Scoring: 2 matches → `W_TWO_SOURCE_MATCH`, 1 match → `W_SINGLE_SOURCE_MATCH`.
+
+## Layer 2 — TODO: TikTok + Tidal + IPI + Facebook + website real checks
+
+Extend `_verify_claimed_source` so claim-only sources get real checks:
+- TikTok: scrape `tiktok.com/@{handle}` embedded JSON (followerCount + name)
+- Tidal: 200-check artist URL
+- IPI: ISO 7172 mod-101 checksum validation (`W_IPI` when valid)
+- Facebook: 200-check (HTML not parseable without login)
+- website: 200-check + cross-ref regex for bandcamp/spotify/discogs links
+
+## Layer 3 — Two-source strict mode (configurable)
+
+New `Artist.require_two_source: bool`. When True, score capped ≤5 unless
+`verification_match_count >= 2` — registration effectively rejected at
+consensus unless both claimed sources match.
+
+## Layer 4 — find_artist.py updates
+
+Add `--disco-mode` (emit DISCO step-5 JSON shape) and `--two-source-report`.
+
+## Future: make validation more real/proper (oAuth)
+
+Current model is claim-and-cross-reference: the artist pastes URLs, the
+leader/validators fetch them. It's spoofable if someone owns fake URLs.
+
+Real-identity upgrade (highest impact):
+- **OAuth linking (Spotify / SoundCloud, then Apple Music)** — artist
+  authorizes via OAuth, the leader grabs the canonical verified profile
+  + an oAuth token that proves possession of the account. This is the
+  strongest anti-impersonation signal short of the signed tx.
+- Requires a backend holder for the oAuth client secret + token exchange
+  (can't hold secrets on-chain), then the contract verifies a signed
+  attestation that the oAuth id matches the claimed name.
+- Scope: adds a `connect(provider, token_attestation)` method on the
+  contract + a small off-chain oAuth broker (e.g. as a Hermes-adjacent
+  service or separate `provenance-oauth` repo).
+
+Deferred (lower priority): EAS attestations, Apple JWT, Farcaster via
+Neynar, ENS text records (v0.3.5).
+
+## Validator / provider catalog (DISCO parity — kept current)
+
+The on-chain validator (`_score_evidence`, `leader_collect`) currently
+binds against these sources:
+- Spotify (search API, Bearer key) — tier 1
+- Apple Music / iTunes Search — tier 1
+- Bandcamp, SoundCloud, Instagram — tier 2 (HTML scraped)
+- Last.fm (scrobble count via `ws.audioscrobbler.com`, key) — tier 2
+- MusicBrainz (artist + ISRC + recording) — tier 1 (evidence)
+- AcoustID (audio fingerprint) — tier 1
+- ENS + Etherscan + Farcaster — wallet-derived
+
+Claim-only (via two-source, pending Layer 2): TikTok, Tidal, Facebook,
+website, Twitter, YouTube, IPI.

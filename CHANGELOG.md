@@ -26,6 +26,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `_lastfm_api_key` / `_etherscan_api_key` functions have been
   removed.
 
+### Added (v0.3.4 Layer 0 + Layer 1)
+
+- **Apple Music `limit=1` fix (Layer 0).** `_apple_music_search` now
+  queries `entity=musicTrack&limit=5` and sets `track_present` only
+  when a track's `artistName` contains the claimed artist name
+  (co-artist guard). `W_APPLE_MUSIC` is now actually awardable.
+- **Two-source verification (Layer 1, DISCO signup parity).** New
+  `Evidence` fields `verification_source_1/2`, `verification_handle_1/2`
+  (str) and `verification_match_count` (u256). `register_artist` takes
+  four optional args (defaults `""` for backward compat). New
+  `_verify_claimed_source` dispatches on the DISCO 13-enum source type,
+  resolving Spotify/Apple/Bandcamp/SoundCloud/Instagram through the
+  existing collectors; claim-only sources (TikTok/Tidal/FB/website/
+  Twitter/YouTube) return `False` pending Layer 2. Scoring awards
+  `W_TWO_SOURCE_MATCH` (15) for 2 matches, `W_SINGLE_SOURCE_MATCH` (8)
+  for 1. Tier-2 rebalanced (bandcamp 5→3, soundcloud 5→3, instagram
+  5→2, lastfm 5→2) to hold the 100 deterministic cap.
+
 ### Known issues (still open)
 
 - **Farcaster endpoint.** The contract calls
@@ -33,10 +51,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   public Farcaster Hub path. Real Hub endpoints are on
   `hub.farcaster.xyz:2281` with a gRPC-style request shape. Field
   currently returns `""` for every wallet.
-- **Apple Music `wrapperType` field.** The iTunes Search API does not
-  return `wrapperType`; that's from the newer Apple Music API which
-  requires a developer JWT. The current parser will not match any
-  iTunes Search response. Drop the field or implement the JWT flow.
+- **Apple Music `limit=1` (not `wrapperType`).** The iTunes Search
+  URL was `?entity=musicArtist,musicTrack&limit=1` — with `name`
+  it returned the artist only, so `track_present` stayed `False`
+  and `W_APPLE_MUSIC` was never awarded. **Fixed in v0.3.4 (Layer 0):**
+  `entity=musicTrack&limit=5` + a `name in artistName` co-artist guard.
 - **Spotify `verified` flag.** The public Spotify Web API search
   endpoint does not return a `verified` boolean on artist objects. The
   scoring branch `ev.spotify_verified or (popularity >= 20 AND

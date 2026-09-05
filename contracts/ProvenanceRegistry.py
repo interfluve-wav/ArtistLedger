@@ -92,6 +92,13 @@ class Evidence:
     instagram_handle: str
     lastfm_scrobble_count: u256
 
+    # Tier 2.5 — two-source verification (DISCO parity, claim + cross-ref)
+    verification_source_1: str          # e.g. "spotify_url" / "bandcamp_url"
+    verification_handle_1: str
+    verification_source_2: str
+    verification_handle_2: str
+    verification_match_count: u256       # 0 / 1 / 2
+
     # Tier 5 — wallet-derived (max 10 points)
     wallet_age_days: u256
     ens_name: str
@@ -151,6 +158,11 @@ class Evidence:
             soundcloud_verified=False,
             instagram_handle="",
             lastfm_scrobble_count=u256(0),
+            verification_source_1="",
+            verification_handle_1="",
+            verification_source_2="",
+            verification_handle_2="",
+            verification_match_count=u256(0),
             wallet_age_days=u256(0),
             ens_name="",
             ens_matches_artist=False,
@@ -171,10 +183,12 @@ W_ACOUSTID: int = 20
 W_ISRC: int = 10
 W_SPOTIFY: int = 10
 W_APPLE_MUSIC: int = 5
-W_BANDCAMP: int = 5
-W_SOUNDCLOUD: int = 5
-W_INSTAGRAM: int = 5
-W_LASTFM: int = 5
+W_BANDCAMP: int = 3        # v0.3.4: rebalanced down to free 7 pts for two-source
+W_SOUNDCLOUD: int = 3
+W_INSTAGRAM: int = 2
+W_LASTFM: int = 2
+W_TWO_SOURCE_MATCH: int = 15
+W_SINGLE_SOURCE_MATCH: int = 8
 W_WALLET_AGE: int = 5
 W_WALLET_NAME: int = 5
 W_LLM_ADJUSTMENT_RANGE: int = 5
@@ -259,18 +273,24 @@ def _spotify_search(name: str, spotify_token: str) -> dict:
         return {}
 
 
-def _apple_music_search(name: str, title: str) -> tuple[str, bool]:
-    """Search Apple Music. Returns (artist_id, track_present)."""
-    url = f"{APPLE_MUSIC_SEARCH_URL}?term={name}+{title}&entity=musicArtist,musicTrack&limit=1"
+def _apple_music_search(name: str, title: str = "") -> tuple[str, bool]:
+    """Search Apple Music. Returns (artist_id, track_present).
+
+    `title` is a reserved hint: when a real release title is supplied it can
+    scope the search to an exact track (Layer 2 refinement). For now the
+    track search is name-scoped with a co-artist guard, matching the on-chain
+    behaviour that verifies the artist's audio is present on Apple Music.
+    """
+    url = f"{APPLE_MUSIC_SEARCH_URL}?term={name}&entity=musicTrack&limit=5"
     data = _http_get_json(url)
     results = data.get("results", [])
     artist_id = ""
     track_present = False
     for r in results:
-        if r.get("wrapperType") == "artist" and not artist_id:
-            artist_id = str(r.get("artistId", ""))
-        if r.get("wrapperType") == "track" and not track_present:
+        if r.get("wrapperType") == "track" and name.lower() in r.get("artistName", "").lower():
+            # Guard against co-artist false matches
             track_present = True
+            artist_id = str(r.get("artistId", ""))
     return artist_id, track_present
 
 
@@ -318,6 +338,91 @@ def _instagram_check(handle: str) -> str:
         return handle
     except Exception:
         return ""
+
+
+def _verify_claimed_source(
+    source_type: str, handle: str, artist_name: str,
+    spotify_token: str, lastfm_key: str,
+) -> bool:
+    """Verify a single DISCO-style claimed source against the artist name.
+
+    Dispatches on the DISCO 13-enum. A source only counts as a match when it
+    independently resolves AND binds to the claimed artist identity:
+      - Spotify: search returns the same artist id as the claimed URL/id
+      - Apple Music: artist resolves and the matched name is >= 3 chars
+      - Bandcamp: page exists AND the parsed page name overlaps the claim
+      - SoundCloud / Instagram: genuine name binding needs their private
+        APIs; Layer 1 checks HTTP existence only (documented limitation),
+        so the signal is weaker — Layer 2 adds real handles/name scrapes.
+    Sources without any deep check (TikTok, Tidal, Facebook, website,
+    Twitter, YouTube) are claim-only and return False.
+
+    Returns True only when the source independently resolves to the claimed
+    artist name.
+    """
+    if not handle or not artist_name:
+        return False
+    st = source_type.lower().strip()
+
+    # Spotify: handle is the artist ID (or a full URL). Search resolves the ID.
+    if st in ("spotify_url", "spotify"):
+        sid = _spotify_artist_id(handle)
+        if not sid:
+            return False
+        # confirm the artist page exists via the Spotify search API
+        sp = _spotify_search(artist_name, spotify_token)
+        return bool(sp and sp.get("id") == sid)
+    if st in ("apple_music_url", "apple"):
+        # artist resolves to a real Apple Music artist page; a short claimed
+        # name (e.g. "A") is too weak to pin the artist, so require >= 3 chars
+        if len(artist_name.strip()) < 3:
+            return False
+        artist_id, _ = _apple_music_search(artist_name, "")
+        return bool(artist_id)
+    if st in ("bandcamp_url", "bandcamp"):
+        h = _bandcamp_handle(handle)
+        bch, real_name, _ = _bandcamp_check(h)
+        if not bch:
+            return False
+        # bandcamp_check already parsed the page name — bind it to the claim
+        return _name_token_overlap(real_name, artist_name) >= 0.5
+    if st in ("soundcloud_url", "soundcloud"):
+        # Layer 1: HTTP existence only. SoundCloud's profile name needs their
+        # (closed) API — Layer 2 upgrades this to a real handle/name scrape.
+        h = handle.rstrip("/").split("/")[-1].split("?")[0]
+        sh, _, _ = _soundcloud_check(h)
+        return bool(sh)
+    if st in ("instagram_handle", "instagram"):
+        # Layer 1: HTTP existence only (page-not-found check). Name binding
+        # is impossible without IG's private GraphQL — Layer 2 improvement.
+        h = handle.rstrip("/").split("/")[-1]
+        return bool(_instagram_check(h))
+    if st in ("lastfm_url", "lastfm", "lastfm_user"):
+        # Last.fm user is the claimed handle; scrobbles of THIS artist by
+        # that user is a genuine listener/ownership signal (needs the key).
+        # at least some scrobble history binds the user to the artist
+        return _lastfm_scrobbles(artist_name, handle, lastfm_key) > 0
+
+    # Source with no verifiable name cross-check yet — claim-only. Layer 2
+    # adds TikTok scrape, Tidal/Facebook/website 200-checks, IPI checksum.
+    return False
+
+
+def _bandcamp_handle(raw: str) -> str:
+    """Extract a bandcamp handle from a URL or bare handle."""
+    if ".bandcamp.com" in raw:
+        return raw.split("//")[-1].split(".")[0]
+    return raw.split("/")[0]
+
+
+def _spotify_artist_id(raw: str) -> str:
+    """Extract a Spotify artist ID from a URL or return a bare ID as-is."""
+    if "open.spotify.com/artist/" in raw:
+        return raw.split("/artist/")[-1].split("?")[0]
+    # bare 22-char base62 ID
+    if raw and len(raw) == 22:
+        return raw
+    return ""
 
 
 def _lastfm_scrobbles(artist: str, lastfm_user: str, lastfm_key: str) -> int:
@@ -426,6 +531,13 @@ def _score_evidence(ev: Evidence, claimed_name: str) -> int:
         score += W_INSTAGRAM
     if int(ev.lastfm_scrobble_count) >= 100:
         score += W_LASTFM
+
+    # Tier 2.5 — two-source verification (DISCO parity)
+    m = int(ev.verification_match_count)
+    if m >= 2:
+        score += W_TWO_SOURCE_MATCH
+    elif m == 1:
+        score += W_SINGLE_SOURCE_MATCH
 
     # Tier 5 (max 10)
     if int(ev.wallet_age_days) >= 90:
@@ -541,13 +653,20 @@ class ProvenanceRegistry(gl.Contract):
         audio_hash: bytes,
         source_urls: dict,  # {"bandcamp": "handle", "soundcloud": ..., ...}
         wallet: str,
+        verification_source_1: str = "",
+        verification_handle_1: str = "",
+        verification_source_2: str = "",
+        verification_handle_2: str = "",
     ) -> str:
         """
         Verify a wallet as belonging to a real human artist.
 
-        Collects 13 structured evidence fields from free public APIs,
-        computes a 0-100 score, and writes the artist to state if the
-        score reaches 70.
+        Collects structured evidence from free public APIs, computes a
+        0-100 score, and writes the artist to state if the score reaches
+        70. The artist may supply up to two claimed verification sources
+        (DISCO parity) — each resolves and cross-checks against the artist
+        name, awarding W_TWO_SOURCE_MATCH if both match, W_SINGLE_SOURCE
+        for one.
         """
         def leader_collect() -> Evidence:
             # Read API credentials from contract storage once. Inside
@@ -592,6 +711,24 @@ class ProvenanceRegistry(gl.Contract):
             ev.lastfm_scrobble_count = _lastfm_scrobbles(
                 name, source_urls.get("lastfm", ""), lastfm_key
             )
+
+            # Tier 2.5 — two-source verification (claimed sources + cross-check)
+            ev.verification_source_1 = verification_source_1
+            ev.verification_handle_1 = verification_handle_1
+            ev.verification_source_2 = verification_source_2
+            ev.verification_handle_2 = verification_handle_2
+            match_total = 0
+            if verification_source_1 and verification_handle_1 and _verify_claimed_source(
+                verification_source_1, verification_handle_1, name,
+                spotify_token, lastfm_key,
+            ):
+                match_total += 1
+            if verification_source_2 and verification_handle_2 and _verify_claimed_source(
+                verification_source_2, verification_handle_2, name,
+                spotify_token, lastfm_key,
+            ):
+                match_total += 1
+            ev.verification_match_count = u256(match_total)
 
             # Tier 5
             ev.wallet_age_days = _wallet_age_days(wallet, etherscan_key)
@@ -855,6 +992,11 @@ def _build_sources_summary(ev: Evidence, source_urls: dict) -> str:
         lines.append(f"Instagram: handle={ev.instagram_handle}")
     if int(ev.lastfm_scrobble_count) > 0:
         lines.append(f"Last.fm scrobbles: {int(ev.lastfm_scrobble_count)}")
+    if ev.verification_source_1:
+        lines.append(
+            f"Source 1: {ev.verification_source_1}={ev.verification_handle_1} "
+            f"(matched: {ev.verification_match_count}/2)"
+        )
     if ev.ens_name:
         lines.append(f"ENS: {ev.ens_name} (matches: {ev.ens_matches_artist})")
     if ev.farcaster_fname:
@@ -887,6 +1029,11 @@ def _score_evidence_from_dict(d: dict, name: str) -> int:
             soundcloud_verified=bool(d.get("soundcloud_verified", False)),
             instagram_handle=d.get("instagram_handle", ""),
             lastfm_scrobble_count=u256(int(d.get("lastfm_scrobble_count", 0))),
+            verification_source_1=d.get("verification_source_1", ""),
+            verification_handle_1=d.get("verification_handle_1", ""),
+            verification_source_2=d.get("verification_source_2", ""),
+            verification_handle_2=d.get("verification_handle_2", ""),
+            verification_match_count=u256(int(d.get("verification_match_count", 0))),
             wallet_age_days=u256(int(d.get("wallet_age_days", 0))),
             ens_name=d.get("ens_name", ""),
             ens_matches_artist=bool(d.get("ens_matches_artist", False)),
