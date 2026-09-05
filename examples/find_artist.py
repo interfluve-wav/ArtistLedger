@@ -38,7 +38,7 @@ except ImportError:
 
 MB_USER_AGENT = os.getenv(
     "MB_USER_AGENT",
-    "provenance-registry/0.3.4 (https://github.com/dembow-ai/provenance-registry)",
+    "artistledger/0.3.4 (https://github.com/dembow-ai/ArtistLedger)",
 )
 TIMEOUT = 10
 BANDCAMP_HTML_MAX = 200_000  # bytes to read before parsing
