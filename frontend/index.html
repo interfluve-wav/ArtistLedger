@@ -321,6 +321,18 @@
 
   <div class="checkboxes" style="margin-top:14px">
     <label><input type="checkbox" id="fStrict" checked> Strict mode (require both sources)</label>
+    <label style="margin-left:auto">
+      Try an artist:
+      <select id="fDemo" style="margin-left:6px;padding:4px 6px;border:1px solid var(--line-ui);border-radius:4px;font-family:inherit;font-size:11px">
+        <option value="">— pick one —</option>
+        <option>Four Tet</option>
+        <option>Caribou</option>
+        <option>Skrillex</option>
+        <option>deadmau5</option>
+        <option>Daft Punk</option>
+        <option>Aphex Twin</option>
+      </select>
+    </label>
   </div>
 
   <div class="actions" style="margin-top:18px">
@@ -333,7 +345,7 @@
   <h1 id="verify-title">Cross-referencing sources</h1>
   <p class="sub" id="verify-sub">Live API checks via the leader. Validators independently re-derive the score.</p>
 
-  <div class="verify-status" id="verify-status">Pick an artist + two sources on the left, then submit. The leader runs 7+ free public APIs, builds the evidence, and 4 validators vote. ~1-2 min.</div>
+  <div class="verify-status" id="verify-status">Pick an artist + two sources on the left (or use "Try an artist" →), then submit. The leader runs 7+ free public APIs, builds the evidence, and 4 validators vote. ~1-2 min. Threshold to flip to Verified is 70/100; AcoustID audio fingerprint (+20) is the single biggest unlock.</div>
 
   <div class="score-banner">
     <div>

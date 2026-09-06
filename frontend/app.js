@@ -395,6 +395,65 @@ modalEl.onclick = (e) => { if (e.target === modalEl) { modalEl.classList.remove(
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { modalEl.classList.remove("open"); setActive("B"); } });
 $("anchorBtn").onclick = () => { alert("anchor_release() is a separate flow. Coming soon."); };
 
+// ── Demo artist picker ─────────────────────────────────────────────────
+// Pre-fills the form with real public handles for known artists. The
+// leader re-queries Spotify/Apple/MusicBrainz by name regardless of what
+// you pass — these handles are what the leader uses to verify your two
+// claimed sources. We disable strict mode so you see the real floor
+// without the strict-mode 5-point cap kicking in.
+const DEMO_ARTISTS = {
+  "Four Tet":     { am: "35888604",  mb: "53b106cf-2cc3-48b6-9b1d-5d8a8a16f5e6", bc: "fourtet",    sc: "four-tet",   ig: "fourtet",    lf: "Four Tet" },
+  "Caribou":      { am: "45464574",  mb: "735e3514-a8ae-401f-af3b-6300df1b8d2c", bc: "caribou",    sc: "caribou",    ig: "caribou",    lf: "Caribou" },
+  "Skrillex":     { am: "356545647", mb: "ae002c5d-aac6-490b-a39a-30aa9e2edf2b", bc: "skrillex",   sc: "skrillex",   ig: "skrillex",   lf: "Skrillex" },
+  "deadmau5":     { am: "78011850",  mb: "4a00ec9d-c635-463a-8cd4-eb61725f0c60", bc: "deadmau5",   sc: "deadmau5",   ig: "deadmau5",   lf: "deadmau5" },
+  "Daft Punk":    { am: "5468295",   mb: "056e4f3e-d505-4dad-8ec1-d04f521cbb56", bc: "daftpunk",   sc: "daftpunk",   ig: "daftpunk",   lf: "Daft Punk" },
+  "Aphex Twin":   { am: "39883194",  mb: "f22942a1-6f70-4f48-866e-238cb2308fbd", bc: "aphextwin",  sc: "aphextwin",  ig: "aphextwin",  lf: "Aphex Twin" },
+};
+
+function fillDemoArtist(name) {
+  const d = DEMO_ARTISTS[name];
+  if (!d) return;
+  $("f-name").value = name;
+  // clear picked
+  picked.length = 0;
+  document.querySelectorAll("#srcPick button.on").forEach(b => b.classList.remove("on"));
+  // pre-pick apple_music + musicbrainz with real handles
+  const amBtn = document.querySelector(`#srcPick button[data-src="apple_music"]`);
+  const mbBtn = document.querySelector(`#srcPick button[data-src="musicbrainz"]`);
+  if (amBtn) { amBtn.click(); document.querySelector(`#srcRows input[data-h="${picked.length - 1}"]`).value = d.am; picked[picked.length - 1].handle = d.am; }
+  if (mbBtn) { mbBtn.click(); document.querySelector(`#srcRows input[data-h="${picked.length - 1}"]`).value = d.mb; picked[picked.length - 1].handle = d.mb; }
+  // disable strict mode for demo so we see the real computed score
+  $("fStrict").checked = false;
+  // Add the bonus handles to source_urls via extra (un-toggled) suggestions in picked rows
+  // — but since the picker only takes 2, the leader will still query by name from the
+  // leader's own side. The bonus handles (bandcamp/soundcloud/instagram/lastfm) live in
+  // the calldata's sourceUrls dict, which the demo submit handler below injects.
+  $("verify-status").innerHTML = `<b>${name}</b> loaded — Apple Music + MusicBrainz prefilled. Strict mode is OFF for this demo so you can see the real computed score. <a href="#" id="alsoBonus" style="color:var(--accent-ui);text-decoration:underline">Also include Bandcamp/SoundCloud/Instagram/Last.fm</a>.`;
+  document.getElementById("alsoBonus")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    includeBonusHandles(d);
+  });
+}
+
+function includeBonusHandles(d) {
+  // Push all bonus sources into the picked array directly (the picker UI
+  // caps at 2 visible, but the backend takes any number in sourceUrls).
+  for (const [k, v] of [["bandcamp", d.bc], ["soundcloud", d.sc], ["instagram", d.ig], ["lastfm", d.lf]]) {
+    if (!picked.some(p => p.src === k)) {
+      picked.push({ src: k, handle: v });
+      const chip = document.querySelector(`#srcPick button[data-src="${k}"]`);
+      if (chip) chip.classList.add("on");
+    }
+  }
+  renderPicked();
+  $("verify-status").innerHTML = `<b>${$("f-name").value}</b> loaded with all 6 sources. Ready to submit.`;
+}
+
+$("fDemo").addEventListener("change", (e) => {
+  const name = e.target.value;
+  if (name) fillDemoArtist(name);
+});
+
 document.querySelectorAll(".modal-tab").forEach(t => {
   t.onclick = () => {
     document.querySelectorAll(".modal-tab").forEach(x => x.classList.toggle("active", x === t));
