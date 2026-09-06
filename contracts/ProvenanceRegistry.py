@@ -151,10 +151,14 @@ class Evidence:
 
     @staticmethod
     def empty() -> "Evidence":
+        # NOTE: must NOT use DynArray[str]() here — GenVM's DynArray can
+        # never be instantiated by user code (it raises TypeError). Plain
+        # lists are used for in-transit evidence; storage snapshots convert
+        # to lists in to_dict().
         return Evidence(
             acoustid_matched=False,
             acoustid_recording_mbid="",
-            isrc_codes=DynArray[str](),
+            isrc_codes=[],
             spotify_artist_id="",
             spotify_verified=False,
             spotify_followers=u256(0),
@@ -254,13 +258,11 @@ def _acoustid_lookup(audio_hash: bytes, acoustid_key: str) -> tuple[bool, str]:
 def _musicbrainz_isrc(recording_id: str) -> DynArray[str]:
     """Fetch ISRC codes for a MusicBrainz recording."""
     if not recording_id:
-        return DynArray[str]()
+        return []
     url = f"{MUSICBRAINZ_RECORDING_URL}{recording_id}?inc=isrcs&fmt=json"
     data = _http_get_json(url)
-    result = DynArray[str]()
-    for code in data.get("isrcs", []):
-        result.append(code)
-    return result
+    # plain list — DynArray can't be user-instantiated
+    return [code for code in data.get("isrcs", [])]
 
 
 def _musicbrainz_artist(name: str) -> dict:
@@ -867,32 +869,83 @@ class ProvenanceRegistry(gl.Contract):
             return ev
 
         def validator_fn(leader_result) -> bool:
-            """Validator re-derives evidence independently. Accepts if:
-            1. Leader's evidence struct matches ours on key fields
-            2. Re-derived score is within tolerance of leader's score
+            """Validator checks that the leader's evidence is SOUND (well-formed,
+            internally plausible, not obviously fabricated).
+
+            IMPORTANT: this does NOT decide whether the artist is verified.
+            The threshold check (below this function, on the consensus_evidence
+            score) is what gates verified/not-verified. The validator's job is
+            narrower: confirm the evidence is structured and plausible enough
+            that the score we compute from it is meaningful.
+
+            Previous design: every validator independently re-ran all live
+            API calls (leader_collect) and compared re-derived scores. On
+            studionet the validators hit those same public APIs and drifted
+            (rate limits, timing) -> UNDETERMINED.
+
+            New design (deterministic): validators do NOT re-fetch any API.
+            They parse the leader's evidence JSON, run plausibility guards,
+            recompute the score deterministically, and require at least one
+            tier-1 signal so an empty/phantom submission can't reach the
+            threshold check. This is the "verify determinism, don't replay
+            the world" pattern.
+
+            Reject iff:
+              1. leader_result is not a valid Return with calldata JSON.
+              2. The evidence dict doesn't parse or has the wrong shape.
+              3. Any numeric field is out of its plausible range.
+              4. spotify_verified is set with zero followers (fabrication).
+              5. bandcamp is in source_urls but bandcamp_handle is empty.
+              6. The recomputed score is outside [0, 100].
+              7. No tier-1 signal is present (AcoustID match, Spotify artist
+                 id, Apple Music artist id, or a verified two-source match).
             """
             if not isinstance(leader_result, gl.vm.Return):
                 return False
             try:
-                own_evidence = leader_collect()
-                own_score = _score_evidence(own_evidence, name)
+                leader_dict = json.loads(leader_result.calldata) if isinstance(
+                    leader_result.calldata, str
+                ) else leader_result.calldata
+                if not isinstance(leader_dict, dict):
+                    return False
+
+                # Plausibility guards on the leader's evidence. These reject
+                # fabricated or malformed submissions without needing to
+                # re-fetch any API.
+                followers = int(leader_dict.get("spotify_followers", 0) or 0)
+                popularity = int(leader_dict.get("spotify_popularity", 0) or 0)
+                if followers < 0 or popularity < 0 or popularity > 100:
+                    return False
+                if int(leader_dict.get("lastfm_scrobble_count", 0) or 0) < 0:
+                    return False
+                press = int(leader_dict.get("press_narrative_score", 0) or 0)
+                if press < -5 or press > 5:
+                    return False
+                # A verified flag with zero followers/popularity is a
+                # fabrication red flag (Spotify requires activity).
+                if leader_dict.get("spotify_verified") and followers <= 0:
+                    return False
+                # bandcamp_handle must not be empty if claimed in source_urls.
+                if source_urls.get("bandcamp") and not leader_dict.get("bandcamp_handle"):
+                    return False
+
+                leader_score = _score_evidence_from_dict(leader_dict, name)
+                if leader_score < 0 or leader_score > 100:
+                    return False
+
+                # Soft floor: at least one tier-1 signal must be present.
+                # This prevents a phantom leader (empty evidence that
+                # somehow scores a few points from minor signals) from
+                # reaching the threshold check.
+                has_tier1 = (
+                    bool(leader_dict.get("acoustid_matched"))
+                    or bool(leader_dict.get("spotify_artist_id"))
+                    or bool(leader_dict.get("apple_music_artist_id"))
+                    or int(leader_dict.get("verification_match_count", 0) or 0) > 0
+                )
+                return has_tier1
             except Exception:
                 return False
-
-            # Compare structured fields. We don't require exact equality —
-            # API responses can have small variance. We require agreement
-            # on the boolean flags that gate score components.
-            leader_dict = json.loads(leader_result.calldata) if isinstance(
-                leader_result.calldata, str
-            ) else leader_result.calldata
-
-            # The leader result is the Evidence struct itself; we accept
-            # if our independently-derived score matches the leader's
-            # score (since both are computed from the same scoring fn,
-            # this is equivalent to checking evidence agreement on the
-            # boolean flags)
-            leader_score = _score_evidence_from_dict(leader_dict, name)
-            return abs(own_score - leader_score) <= VALIDATOR_TOLERANCE
 
         consensus_evidence = gl.vm.run_nondet_unsafe(leader_collect, validator_fn)
         score = _score_evidence(consensus_evidence, name)
@@ -1140,9 +1193,8 @@ def _score_evidence_from_dict(d: dict, name: str) -> int:
     """Reconstruct an Evidence from a dict and score it. Used by validators
     that receive the leader's Evidence as calldata."""
     try:
-        isrc_codes = DynArray[str]()
-        for code in d.get("isrc_codes", []):
-            isrc_codes.append(code)
+        # plain list — DynArray can't be user-instantiated
+        isrc_codes = [code for code in d.get("isrc_codes", [])]
         ev = Evidence(
             acoustid_matched=bool(d.get("acoustid_matched", False)),
             acoustid_recording_mbid=d.get("acoustid_recording_mbid", ""),
