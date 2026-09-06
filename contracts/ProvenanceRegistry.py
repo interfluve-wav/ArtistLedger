@@ -297,18 +297,60 @@ def _apple_music_search(name: str, title: str = "") -> tuple[str, bool]:
     scope the search to an exact track (Layer 2 refinement). For now the
     track search is name-scoped with a co-artist guard, matching the on-chain
     behaviour that verifies the artist's audio is present on Apple Music.
+
+    Co-artist guard (v0.3.5 fix): the previous version accepted ANY track
+    whose `artistName` contained the claimed name as a substring, then took
+    the last match. For "Four Tet" this matched "Skrillex, Starrah & Four
+    Tet" first and returned Skrillex's artistId — wrong artist.
+
+    v0.3.5 fixes this by:
+      1. Splitting `artistName` on `,` / `&` / `feat.` / `featuring` and
+         checking each token segment for exact (case-insensitive) equality
+         against the claimed name, not substring containment.
+      2. Preferring exact matches over substring matches when both exist.
+      3. Pinning `track_present` to True only when we find an exact-name
+         track by the canonical artist.
     """
-    url = f"{APPLE_MUSIC_SEARCH_URL}?term={name}&entity=musicTrack&limit=5"
+    url = f"{APPLE_MUSIC_SEARCH_URL}?term={name}&entity=musicTrack&limit=10"
     data = _http_get_json(url)
     results = data.get("results", [])
-    artist_id = ""
-    track_present = False
+    name_lc = name.strip().lower()
+    # Split artistName on common separators and check each segment.
+    def _exact_segment(an: str) -> bool:
+        if not an:
+            return False
+        an_lc = an.lower()
+        for sep in [",", "&", " feat.", " feat ", " featuring ", " with ", " x "]:
+            an_lc = an_lc.replace(sep, "|")
+        for seg in an_lc.split("|"):
+            if seg.strip() == name_lc:
+                return True
+        return False
+    exact_id = ""
+    exact_track = False
+    substring_id = ""
+    substring_track = False
     for r in results:
-        if r.get("wrapperType") == "track" and name.lower() in r.get("artistName", "").lower():
-            # Guard against co-artist false matches
-            track_present = True
-            artist_id = str(r.get("artistId", ""))
-    return artist_id, track_present
+        if r.get("wrapperType") != "track":
+            continue
+        an = r.get("artistName", "")
+        if _exact_segment(an):
+            # Prefer the first exact match (it'll be the canonical artist)
+            if not exact_id:
+                exact_id = str(r.get("artistId", ""))
+                exact_track = True
+        elif name_lc in an.lower():
+            if not substring_id:
+                substring_id = str(r.get("artistId", ""))
+                substring_track = True
+    if exact_id:
+        return exact_id, exact_track
+    if substring_id:
+        # Fall back to substring match but DON'T set track_present — the
+        # canonical-artist guarantee isn't met. This means a co-artist-only
+        # track won't bump the strict score.
+        return substring_id, False
+    return "", False
 
 
 # ─── Tier 2 factor collectors (URL-based) ─────────────────────────────────
