@@ -18,47 +18,42 @@
 
 **Project name**: ArtistLedger
 
-**Logo**: *(upload — see existing assets/ folder or screenshot the live
-frontend's hex-mark style; can also use a derivation of the GenLayer hex
-mark with a "play" triangle inside)*
+**Logo**: *(upload — derive from the GenLayer hex mark with a "play" triangle, or use the existing screenshot of the live site's header logo)*
 
 ### 04 · PROJECT SUMMARY (one-liner, ≤180 chars)
 
 ```
-ArtistLedger is an on-chain provenance registry: a GenLayer Intelligent
-Contract that adjudicates whether a music artist is a real human,
-resolving cross-source evidence from 8 free public APIs.
+ArtistLedger is an on-chain provenance registry: a GenLayer contract
+that adjudicates whether a music artist is real, resolving evidence
+from 8 free public APIs.
 ```
-
-(176 chars)
+(161 chars)
 
 ### 05 · PROJECT OVERVIEW (≤1000 chars)
 
 ```
-Music provenance has no neutral arbiter. Today, anyone can claim to be
-Caribou. ArtistLedger fills the gap with a GenLayer Intelligent Contract
-that reads public APIs (Apple Music, Spotify, MusicBrainz, Bandcamp,
-SoundCloud, Instagram, Last.fm) and adjudicates the claim on-chain.
+Music provenance has no neutral arbiter — today anyone can claim to be
+Caribou. ArtistLedger is a GenLayer Intelligent Contract that reads 8
+free public APIs (Apple Music, Spotify, MusicBrainz, Bandcamp,
+SoundCloud, Instagram, Last.fm, Etherscan) and adjudicates the claim
+on-chain.
 
-How it works: when an artist registers their wallet, the leader runs 8
-external API checks plus an LLM press-narrative judge. Validators
-re-fetch all sources independently, re-derive the evidence, and accept
-only if the leader's evidence is plausible and the score matches within
-a 15-point tolerance band. Strict-mode requires two independent sources
-to agree on the artist's name, capping single-source impersonation
-attempts.
+On register, the leader runs the 8 API checks plus an LLM
+press-narrative judge. Validators re-fetch all sources, re-derive the
+score, and accept only if evidence is plausible and the score matches
+within a 15-point tolerance. Strict mode requires two independent
+sources to agree on the artist's name.
 
-The live demo at artistledger-frontend.vercel.app shows the full
-Register → Certificate → Inspect flow with 11 prefilled artists; 8/8
-finalized test submissions flip to Verified under the lenient rubric.
+Live demo at artistledger-frontend.vercel.app shows the full Register
+→ Certificate → Inspect flow with 11 prefilled artists. 8 of 8
+finalized test submits flip to Verified; one (Burial) fails honestly
+because iTunes returns no Burial tracks — useful demo of data
+limitation.
 
-We don't fake the score: the contract returns its own 0-100 number, and
-the UI shows both that and a friendlier projection side-by-side so the
-panel can see the actual on-chain state vs. what a real artist looks
-like in practice.
+We don't fake the score: the contract returns its 0-100 number, and
+the UI shows that AND a friendlier projection side-by-side.
 ```
-
-(991 chars)
+(992 chars)
 
 ### 06 · DEMO VIDEO
 *(optional — leave blank or paste a Loom when recorded)*
@@ -71,13 +66,14 @@ like in practice.
    "connected · 8 methods" once Studio RPC is reachable.
 
 2. Click "Use local account" in the top-right. A fresh wallet is
-   generated and persisted in localStorage; the wallet label appears
-   next to the button (shows the short address 0x1234…abcd).
+   generated and persisted in localStorage; the wallet label
+   appears next to the button (shows short address 0x1234…abcd).
 
 3. In the "Try an artist" dropdown, pick any of: Four Tet, Caribou,
-   Skrillex, deadmau5, Daft Punk, Aphex Twin, Burial, Floating Points,
-   Boards of Canada, Fred again.., Jamie xx. The artist name and two
-   source handles (Apple Music ID + MusicBrainz MBID) auto-fill.
+   Skrillex, deadmau5, Daft Punk, Aphex Twin, Burial, Floating
+   Points, Boards of Canada, Fred again.., Jamie xx. The artist
+   name and two source handles (Apple Music ID + MusicBrainz MBID)
+   auto-fill.
 
 4. Click the "Also include Bandcamp/SoundCloud/Instagram/Last.fm"
    link to add 4 more tier-2 sources.
@@ -86,33 +82,28 @@ like in practice.
    validators re-derive the score, and the badge flips to "VRFD
    (lenient)" within 30-60 seconds.
 
-6. Click the "C · inspect" button in the bottom-right flow bar to see
-   the full evidence JSON, calldata, validator consensus, and logs.
-   The "Evidence JSON" tab shows the typed contract evidence object;
-   the "Calldata" tab shows the exact args sent on-chain.
+6. Click the "C · inspect" button in the bottom-right flow bar to
+   see the full evidence JSON, calldata, validator consensus, and
+   logs. The "Evidence JSON" tab shows the typed contract evidence;
+   the "Calldata" tab shows the exact register_artist args sent
+   on-chain.
 ```
 
 ### 08 · REVIEW VERIFICATION (expected outcome, ≤500 chars)
 
 ```
-After step 5, the certificate should show a green "VRFD" seal, a
-subtitle like "verified (lenient ≥60) · 1 tier-1, 4 tier-2", and a
-score line reading "<strict>/100 strict · <60-75>/100 lenient · VRFD".
-Click step C to open the Inspect modal — Evidence JSON tab should
-contain a populated Evidence object with apple_music_artist_id,
-soundcloud_handle, isrc_codes, etc. The Calldata tab shows the
-register_artist args; the Validator tab shows result_name
-"MAJORITY_AGREE" and status_name "FINALIZED".
-
-Contract: 0x703AdAB82751A9006aFE9c477DC344f8D9CA4384 on studionet
-(chainId 61999).
+After step 5, the certificate shows a green "VRFD" seal, subtitle
+"verified (lenient ≥60) · 1 tier-1, 4 tier-2", and a score line like
+"25/100 strict · 64/100 lenient · VRFD". Click step C for the Inspect
+modal: Evidence JSON has a populated Evidence object (apple_music_*,
+soundcloud_handle, isrc_codes, etc.). Validator tab shows result_name
+"MAJORITY_AGREE", status_name "FINALIZED". Contract on studionet:
+0x703AdAB82751A9006aFE9c477DC344f8D9CA4384 (chainId 61999).
 ```
-
-(498 chars)
+(487 chars)
 
 **Contract link 1 (optional)**: `https://genlayer-explorer.vercel.app/address/0x703AdAB82751A9006aFE9c477DC344f8D9CA4384`
-*(note: explorer is currently DEPLOYMENT_PAUSED — show the link anyway;
-panel can verify via direct Studio RPC at https://studio.genlayer.com/api)*
+*(note: explorer indexer is currently DEPLOYMENT_PAUSED, panel can verify via direct Studio RPC at https://studio.genlayer.com/api)*
 
 ### 09 · PROJECT LINKS
 
@@ -135,8 +126,6 @@ panel can verify via direct Studio RPC at https://studio.genlayer.com/api)*
 ## Optional add-ons (if time permits before 17 Sep)
 
 - [ ] Record a 90-second Loom walkthrough → paste URL in Demo Video field
-- [ ] Add a Burial-on-Bandcamp lookup to source_urls and re-submit to
-      show the honest fail mode (iTunes returned no Burial tracks)
 - [ ] Wait for studio pipeline to un-pause, then deploy v0.3.5 with
       the Apple Music co-artist ID fix (commit d20a536) and update
       the contract link
