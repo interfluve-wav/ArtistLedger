@@ -19,41 +19,50 @@ expected impact on verification correctness.
 
 ## Done in v0.3.4+
 
-- **Deterministic validator (commit `8be39ad`, awaiting on-chain
-  verification).** The old validator re-ran every public API and
-  re-derived the score; on studionet that drifted → UNDETERMINED.
-  New validator_fn in `register_artist` does NOT re-fetch any API.
-  It parses the leader's evidence JSON, runs plausibility guards
-  (numeric ranges, fabrication red flags), recomputes the score
-  deterministically, and requires at least one tier-1 signal so a
-  phantom leader with all-zero evidence can't squeak past. The
-  threshold check (>=70) on the consensus_evidence score is the
-  actual verification gate; the validator's narrower job is "is
-  this evidence sound enough to score meaningfully."
-- **Standalone validator tests (commit pending).**
+- **Deterministic validator (commit `8be39ad`)** — DynArray→list
+  migration in `Evidence.empty()`, `_musicbrainz_isrc()`, and
+  `_score_evidence_from_dict()`. The deployed contract on studionet
+  at `0x4Da983...` still has the OLD code with `DynArray[str]()`.
+- **Standalone validator tests (commit `5f890ac`).**
   `tests/test_validator_standalone.py` exercises the new
   validator's pure logic (plausibility guards, tier-1 floor,
   score reproduction from a dict) without requiring a genlayer
   runtime. 10/10 pass.
-- **register_artist smoke harness (commit pending).**
+- **register_artist smoke harness (commit `5f890ac`).**
   `examples/register_artist_smoke.py` runs `find_artist` for an
   artist, builds a full `register_artist` call, prints it for
   inspection, and (with `--submit`) sends it via `genlayer write`.
   Dry-run mode works without GEN.
-- **Faucet watcher (commit pending).** `scripts/faucet_watch.sh`
+- **Faucet watcher (commit `5f890ac`).** `scripts/faucet_watch.sh`
   polls one or more addresses on studionet every 30s and exits 0
   the moment any shows non-zero balance.
+- **VPS-side submitter (commit `e454020`).** Bypasses the genlayer
+  CLI's OS keychain requirement (which doesn't work on headless
+  Linux without a real PAM session) by using genlayer-js directly
+  via Node + eth_account to decrypt the keystore.
+- **Burial on-chain test (commit `662dae3`)** — verified the
+  deployed contract's actual behavior on studionet:
+  - TX `0x81a903ed50a9beb87d17d7b2bf7f84b941346083ee10c23874c1208d119a9008`
+  - Result: `MAJORITY_DISAGREE` after 4 rounds, status `FINALIZED`
+  - **Root cause:** `TypeError: this class can't be instantiated by user`
+    at `Evidence.empty()` line 157 — `DynArray[str]()` crash
+  - **Verdict:** 8be39ad's DynArray→list migration is REQUIRED, not
+    preventive. Without it, register_artist cannot succeed on
+    the deployed contract.
 
-## Required before on-chain verification (blocked on funding)
+## Required to make v0.3.4 actually work on chain
 
-- **Studionet faucet deliverability.** No GEN has settled to any
-  of our three test addresses (`0xfCeb…5024`, `0x89ee…0bd6`,
-  `0xd3b8…04a9`) on chain. The portal UI shows "claimed" but the
-  chain returns 0. Either the claim is queued or it went to a
-  different network. Until this is resolved, the on-chain test
-  of `register_artist` for Burial cannot run.
-- **AcoustID API key** — still needed out-of-band for live scoring.
-  Stored in `.env` (gitignored) and used by `_acoustid_lookup`.
+1. **Redeploy with 8be39ad's code.** Studionet is gasless, so this
+   costs nothing. Use `genlayer deploy --contract contracts/ProvenanceRegistry.py`
+   from a machine with the genlayer CLI. Save the new contract
+   address.
+2. **Call `set_api_keys`** on the new contract with the API keys
+   from `.env` (AcoustID, Spotify token, Last.fm, Etherscan).
+3. **Re-run the Burial test** against the new address. Expect
+   `ACCEPTED` (Burial sparse evidence ~25 score, below the 70
+   verification threshold, but > 0 so no phantom floor rejection).
+4. **Submit a richer artist** (AcoustID + Spotify + 2-source) to
+   confirm the full threshold pass.
 
 ## Required before broad release (not blocking testnet)
 
