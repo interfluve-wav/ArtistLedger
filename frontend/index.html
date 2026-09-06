@@ -1,184 +1,450 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>ArtistLedger — prove you're a real artist</title>
+<title>ArtistLedger — Register → Certificate → Inspect</title>
 <style>
-  :root {
-    --bg: #0a0c10; --panel: #12151c; --panel2: #171b24;
-    --border: #232937; --text: #e6e9ef; --dim: #8b93a7;
-    --accent: #4f8cff; --ok: #34d399; --bad: #f87171; --warn: #fbbf24;
-    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
-  }
+  /* ═════════════ tokens ═════════════ */
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #fafaf7;
+    --paper: #f7f3ec;
+    --ink: #1a1814;
+    --ink-2: #5b6075;
+    --ink-3: #9aa0b3;
+    --rule: #d8d2c5;
+    --rule-soft: #ebe6da;
+    --accent: #8a3a1f;
+    --muted: #6b655a;
+    --ok: #2f5d3a;
+    --warn: #8a5a1f;
+    --err: #8a3a1f;
+    --code-bg: #f0ebde;
+    --line-ui: #e6e3da;
+    --accent-ui: #2563eb;
+    --accent-ui-soft: #dbeafe;
+  }
   body {
-    background: var(--bg); color: var(--text);
-    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    padding: 32px 20px 80px;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--ink);
+    line-height: 1.45; -webkit-font-smoothing: antialiased; font-size: 14px;
   }
-  .wrap { max-width: 720px; margin: 0 auto; }
-  header { margin-bottom: 28px; }
-  h1 { font-size: 26px; letter-spacing: -0.02em; }
-  h1 .tag { color: var(--accent); font-weight: 400; }
-  .sub { color: var(--dim); font-size: 14px; margin-top: 8px; line-height: 1.6; }
-  .sub code { font-family: var(--mono); font-size: 12px; color: #b9c2d6; }
-  .statusbar {
-    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px 16px; margin-bottom: 24px; font-size: 13px;
+
+  /* ═════════════ header ═════════════ */
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 20px; background: white; border-bottom: 1px solid var(--line-ui);
   }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex: none; }
-  .dot.on { background: var(--ok); } .dot.err { background: var(--bad); }
-  button {
-    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
-    padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+  .logo { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .logo-dot { width: 7px; height: 7px; background: var(--accent-ui); border-radius: 50%; }
+  .header-meta { display: flex; gap: 16px; font-size: 11px; color: var(--ink-2); align-items: center; }
+  .header-meta b { color: var(--ink); font-weight: 500; font-family: "SF Mono", Menlo, monospace; font-size: 10px; }
+  .header-meta .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  .header-meta .dot.on { background: var(--ok); }
+  .header-meta .dot.err { background: var(--err); }
+  .header-meta .dot.warn { background: var(--warn); }
+  .header-meta .btn {
+    background: var(--ink); color: white; border: 1px solid var(--ink);
+    padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer;
+    font-family: inherit; letter-spacing: 0.04em;
   }
-  button:hover { filter: brightness(1.1); }
-  button.secondary { background: var(--panel2); border: 1px solid var(--border); color: var(--text); }
-  button:disabled { opacity: .5; cursor: default; }
-  button.big { padding: 12px 22px; font-size: 15px; }
-  .card {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
-    padding: 22px; margin-bottom: 18px;
+  .header-meta .btn.ghost { background: transparent; color: var(--ink); }
+
+  /* ═════════════ STATE A: split-pane (register + live verify) ═════════════ */
+  .split { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 51px); }
+  .split.hidden { display: none; }
+  .left {
+    background: white; border-right: 1px solid var(--line-ui);
+    padding: 20px 24px;
+    overflow-y: auto; max-height: calc(100vh - 51px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
   }
-  .card h2 { font-size: 16px; margin-bottom: 4px; }
-  .card .desc { color: var(--dim); font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
-  label { display: block; font-size: 12px; color: var(--dim); margin: 12px 0 5px; text-transform: uppercase; letter-spacing: 0.04em; }
-  input, textarea {
-    width: 100%; background: var(--panel2); color: var(--text);
-    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
-    font-size: 14px; font-family: inherit;
+  .right {
+    padding: 20px 24px; background: var(--bg);
+    overflow-y: auto; max-height: calc(100vh - 51px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
   }
-  input.mono { font-family: var(--mono); font-size: 13px; }
-  input:focus, textarea:focus { outline: 1px solid var(--accent); }
-  .actions { margin-top: 18px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .result {
-    margin-top: 18px; background: #0d1017; border: 1px solid var(--border);
-    border-radius: 10px; padding: 16px; font-size: 14px;
-    display: none;
+  .split.fading .left, .split.fading .right { opacity: 0; transform: translateY(8px); }
+
+  .step-h { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px; }
+  .left h1, .right h1 { font-size: 20px; font-weight: 600; margin-bottom: 3px; letter-spacing: -0.01em; }
+  .left .sub, .right .sub { color: var(--ink-2); margin-bottom: 20px; font-size: 13px; }
+
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; color: var(--ink-2); margin-bottom: 3px; font-weight: 500; }
+  .field input, .field select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line-ui);
+    border-radius: 6px; font-family: inherit; font-size: 13px;
+    background: white; color: var(--ink); transition: border-color 0.15s;
   }
-  .result.show { display: block; }
-  .result.ok { border-color: rgba(52,211,153,.4); background: rgba(52,211,153,.06); }
-  .result.err { border-color: rgba(248,113,113,.5); background: rgba(248,113,113,.06); }
-  .result .score {
-    font-size: 36px; font-weight: 700; font-family: var(--mono);
-    line-height: 1; margin: 0;
-  }
-  .result .verdict { font-size: 18px; font-weight: 600; margin: 8px 0 0; }
-  .result .why { color: var(--dim); margin-top: 8px; line-height: 1.6; }
-  .result .tiers {
-    margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px;
-    font-size: 13px;
-  }
-  .result .tier { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed var(--border); }
-  .result .tier b { color: var(--text); font-family: var(--mono); }
-  details { margin-top: 14px; }
-  summary { cursor: pointer; color: var(--dim); font-size: 13px; user-select: none; }
-  details[open] summary { color: var(--text); margin-bottom: 8px; }
-  .src-pick { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 0; }
+  .field input:focus, .field select:focus { border-color: var(--accent-ui); outline: 2px solid var(--accent-ui-soft); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .section-divider { height: 1px; background: var(--line-ui); margin: 18px 0; }
+  .section-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .section-label h2 { font-size: 13px; font-weight: 600; }
+  .section-label .hint { font-size: 11px; color: var(--ink-3); }
+
+  .src-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
   .src-pick button {
-    background: var(--panel2); border: 1px solid var(--border); color: var(--dim);
-    font-size: 12px; padding: 6px 12px; border-radius: 16px;
+    background: var(--paper); border: 1px solid var(--rule); color: var(--ink-2);
+    font-size: 11px; padding: 5px 10px; border-radius: 14px; cursor: pointer;
+    font-family: inherit; transition: all 0.12s;
   }
-  .src-pick button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .src-row { display: grid; grid-template-columns: 80px 1fr; gap: 10px; align-items: center; margin-top: 8px; }
-  .src-row .src-name { font-size: 12px; color: var(--dim); text-transform: capitalize; }
-  .hint { font-size: 12px; color: var(--dim); margin-top: 8px; line-height: 1.5; }
-  a { color: var(--accent); text-decoration: none; }
-  .checkboxes { display: flex; gap: 14px; margin-top: 10px; font-size: 13px; align-items: center; }
-  .checkboxes label { display: flex; gap: 6px; align-items: center; margin: 0; text-transform: none; letter-spacing: 0; color: var(--text); cursor: pointer; }
+  .src-pick button.on { background: var(--ink); border-color: var(--ink); color: white; }
+  .src-pick button.on::before { content: "✓ "; }
+  .src-row { display: grid; grid-template-columns: 110px 1fr 28px; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .src-row select, .src-row input { padding: 6px 8px; font-size: 12px; }
+  .src-row .rm { background: transparent; border: 1px solid var(--rule); color: var(--ink-3); padding: 4px; border-radius: 4px; cursor: pointer; font-family: inherit; }
+  .src-row .rm:hover { color: var(--err); border-color: var(--err); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border: 1px solid var(--ink);
+    background: var(--ink); color: white;
+    border-radius: 6px; font-family: inherit; font-size: 12px;
+    font-weight: 500; cursor: pointer; transition: all 0.15s;
+  }
+  .btn.ghost { background: transparent; color: var(--ink); }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+  .btn:hover { opacity: 0.9; }
+
+  .checkboxes { display: flex; gap: 14px; margin-top: 10px; font-size: 12px; align-items: center; }
+  .checkboxes label { display: flex; gap: 6px; align-items: center; margin: 0; color: var(--ink); cursor: pointer; }
   .checkboxes input { width: auto; }
-  .raw { margin-top: 12px; padding: 10px; background: #07090d; border: 1px solid var(--border); border-radius: 6px; font-family: var(--mono); font-size: 12px; color: var(--dim); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow: auto; }
+
+  .verify-status { margin-bottom: 14px; font-size: 12px; color: var(--ink-2); line-height: 1.6; }
+  .verify-status b { color: var(--ink); }
+  .verify-status .err { color: var(--err); }
+  .log-line { font-size: 11px; font-family: "SF Mono", Menlo, monospace; color: var(--ink-2); }
+
+  .run-card { background: white; border: 1px solid var(--line-ui); border-radius: 8px; padding: 14px 18px; margin-bottom: 12px; }
+  .run-card .h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .run-card h3 { font-size: 13px; font-weight: 600; }
+  .pulse { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; color: var(--ink-2); }
+  .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
+
+  .score-banner {
+    background: linear-gradient(135deg, var(--ink) 0%, #1a1d28 100%);
+    color: white; padding: 16px 20px; border-radius: 8px;
+    margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .score-banner .label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.6; }
+  .score-banner .big { font-size: 34px; font-weight: 600; line-height: 1; margin-top: 4px; font-family: "SF Mono", Menlo, monospace; }
+  .score-banner .big .denom { font-size: 16px; opacity: 0.5; }
+  .score-banner .verdict { text-align: right; }
+  .score-banner .verdict .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.06em; background: var(--ink-3); color: var(--ink);
+  }
+  .score-banner .verdict .badge.ok { background: var(--ok); color: white; }
+  .score-banner .verdict .badge.warn { background: var(--warn); color: white; }
+
+  /* ═════════════ STATE B: certificate (editorial) ═════════════ */
+  .cert {
+    max-width: 640px; margin: 0 auto; padding: 40px 32px 56px;
+    display: none;
+    animation: fadeIn 0.6s ease 0.2s both;
+  }
+  .cert.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .cert .crest {
+    text-align: center; font-size: 10px; letter-spacing: 0.28em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+  }
+  .cert h1 {
+    font-family: "Iowan Old Style", "Apple Garamond", Garamond, "Times New Roman", serif;
+    font-size: 30px; font-weight: 400; line-height: 1.15; text-align: center;
+    margin-bottom: 6px; letter-spacing: -0.01em;
+  }
+  .cert .subtitle { text-align: center; font-style: italic; color: var(--muted); margin-bottom: 28px; font-size: 13px; }
+  .cert .seal {
+    width: 56px; height: 56px; border: 1.5px solid var(--ink); border-radius: 50%;
+    margin: 0 auto 24px; display: flex; align-items: center; justify-content: center;
+    font-size: 9px; letter-spacing: 0.2em; color: var(--muted);
+  }
+  .cert .seal.ok { border-color: var(--ok); color: var(--ok); }
+  .cert .field { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--rule-soft); font-size: 12px; }
+  .cert .field-label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
+  .cert .field-value { font-family: "SF Mono", Menlo, monospace; color: var(--ink); }
+  .cert .field-value.mono { font-family: "SF Mono", Menlo, monospace; font-size: 11px; }
+  .cert .rule { border: none; border-top: 1px solid var(--rule); margin: 20px 0; }
+
+  details summary { cursor: pointer; padding: 8px 0; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--rule-soft); font-size: 12px; }
+  details summary .label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; min-width: 80px; }
+  details summary .handle { font-family: "SF Mono", Menlo, monospace; flex: 1; color: var(--ink); font-size: 11px; }
+  details summary .verdict { font-size: 11px; padding: 1px 6px; border-radius: 3px; }
+  details summary .verdict.ok { color: var(--ok); }
+  details summary .verdict.warn { color: var(--warn); }
+  details summary .verdict.err { color: var(--err); }
+  details summary .caret { color: var(--ink-3); transition: transform 0.15s; }
+  details[open] summary .caret { transform: rotate(90deg); }
+  details .raw {
+    padding: 10px; font-family: "SF Mono", Menlo, monospace; font-size: 11px;
+    color: var(--ink-2); background: var(--code-bg); border-left: 2px solid var(--accent);
+    margin: 6px 0 12px 90px; white-space: pre-wrap; word-break: break-word;
+    line-height: 1.55;
+  }
+
+  .cert .score { text-align: center; margin: 28px 0 18px; }
+  .cert .score-num { font-size: 48px; line-height: 1; font-weight: 400; font-family: "SF Mono", Menlo, monospace; }
+  .cert .score-num .denom { color: var(--muted); font-size: 22px; }
+  .cert .score-label { font-size: 9px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+
+  .cert .breakdown {
+    display: grid; grid-template-columns: 1fr 60px;
+    gap: 4px 20px; font-size: 12px; margin: 14px 0;
+  }
+  .cert .breakdown .lbl { color: var(--muted); }
+  .cert .breakdown .val { text-align: right; color: var(--ink); font-family: "SF Mono", Menlo, monospace; }
+  .cert .breakdown .val.add { color: var(--ok); }
+  .cert .breakdown .val.neg { color: var(--err); }
+  .cert .breakdown .total { color: var(--ink); font-weight: 600; }
+
+  .cert .actions {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    justify-content: center; align-items: center; margin-top: 24px;
+  }
+  .cert .actions .btn { padding: 8px 16px; font-size: 11px; letter-spacing: 0.06em; background: var(--ink); color: var(--paper); border-radius: 0; }
+  .cert .actions .btn.ghost { background: transparent; color: var(--ink); }
+  .cert .actions .btn.link { background: transparent; color: var(--muted); border-color: var(--rule); }
+  .cert .actions .btn.warn { background: transparent; color: var(--err); border-color: var(--rule); }
+  .cert-sep { width: 1px; height: 20px; background: var(--rule); margin: 0 2px; }
+  .cert .hint { text-align: center; font-size: 10px; color: var(--muted); font-style: italic; margin-top: 6px; }
+
+  /* ═════════════ STATE C: modal (inspect) ═════════════ */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(26, 24, 20, 0.65);
+    backdrop-filter: blur(2px);
+    display: none; align-items: flex-start; justify-content: center;
+    padding: 24px 12px; overflow-y: auto; z-index: 100;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--paper); width: 100%; max-width: 820px;
+    border: 1px solid var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+  }
+  .modal-head {
+    padding: 12px 20px; border-bottom: 1px solid var(--rule);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal-head h2 { font-size: 14px; font-weight: 400; letter-spacing: 0.02em; }
+  .modal-head h2 em { color: var(--muted); font-style: normal; font-size: 11px; letter-spacing: 0.1em; margin-left: 8px; }
+  .modal-close {
+    background: none; border: 1px solid var(--rule); color: var(--muted);
+    font-family: inherit; font-size: 10px; letter-spacing: 0.1em;
+    padding: 3px 10px; cursor: pointer;
+  }
+  .modal-close:hover { color: var(--ink); border-color: var(--ink); }
+  .modal-tabs { display: flex; border-bottom: 1px solid var(--rule); background: var(--code-bg); }
+  .modal-tab {
+    padding: 8px 14px; font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted);
+    border-right: 1px solid var(--rule); cursor: pointer;
+    background: transparent; border-top: none; border-bottom: none; border-left: none;
+    font-family: inherit;
+  }
+  .modal-tab.active { color: var(--ink); background: var(--paper); border-top: 2px solid var(--accent); padding-top: 6px; }
+  .modal-body { padding: 16px 20px 20px; max-height: 60vh; overflow-y: auto; }
+  .modal-panel { display: none; }
+  .modal-panel.active { display: block; }
+  pre.json {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word;
+    background: var(--code-bg); padding: 12px 14px; border-left: 2px solid var(--accent);
+  }
+
+  /* ═════════════ flow controller (bottom bar) ═════════════ */
+  .flow-bar {
+    position: fixed; bottom: 12px; right: 12px;
+    background: var(--ink); color: white;
+    padding: 6px 10px; border-radius: 6px; font-size: 11px;
+    display: flex; gap: 6px; align-items: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000;
+  }
+  .flow-bar .step-label { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.6; }
+  .flow-bar button {
+    background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3);
+    padding: 3px 8px; border-radius: 3px; font-family: inherit; font-size: 10px;
+    cursor: pointer; letter-spacing: 0.05em;
+  }
+  .flow-bar button:hover { background: rgba(255,255,255,0.25); }
+  .flow-bar button.active { background: var(--ok); border-color: var(--ok); color: white; }
+  .flow-bar button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .flow-bar .arrow { color: rgba(255,255,255,0.4); margin: 0 -2px; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>ArtistLedger <span class="tag">/ prove you're a real artist</span></h1>
-    <div class="sub">
-      Onchain proof that a wallet belongs to a real human music artist. Cross-source verification across Apple Music, MusicBrainz, Bandcamp, SoundCloud, Instagram, Last.fm, and more — adjudicated by 4 independent validators on GenLayer.
-    </div>
-  </header>
 
-  <div class="statusbar">
-    <span class="dot" id="rpcDot"></span>
-    <span id="rpcStatus">Checking Studio RPC…</span>
-    <span style="flex:1"></span>
-    <button class="secondary" id="connectBtn" style="display:none">Connect wallet</button>
-    <button id="localAcctBtn">Use local account</button>
-    <span id="walletLabel" style="color:var(--dim);font-family:var(--mono);font-size:12px"></span>
+<header>
+  <div class="logo"><div class="logo-dot"></div>ArtistLedger · register_artist</div>
+  <div class="header-meta">
+    <span><span class="dot" id="rpcDot"></span><b id="rpcStatus">connecting…</b></span>
+    <span>contract <b>0x703AdAB…4384</b></span>
+    <button class="btn ghost" id="localAcctBtn">Use local account</button>
+    <span id="walletLabel" style="font-family:'SF Mono',Menlo,monospace;font-size:10px;color:var(--ink-2)"></span>
   </div>
-  <div class="hint" style="margin:-12px 0 18px 0">Studionet is gasless — no GEN needed. Click "Use local account" to generate a test key in your browser.</div>
+</header>
 
-  <!-- ── Register (the main flow) ──────────────────────────────────────── -->
-  <div class="card">
-    <h2>1. Tell us your artist name</h2>
-    <div class="desc">Just the name your fans know. We use it to cross-check the links you provide below.</div>
-    <label>Artist name</label>
-    <input id="raName" placeholder="e.g. Four Tet" value="Four Tet">
+<!-- ══════════════ STATE A: split-pane (register + live verify) ══════════════ -->
+<div class="split" id="split">
+
+<div class="left">
+  <div class="step-h">step 1 of 3 — register</div>
+  <h1>Register an artist</h1>
+  <p class="sub">Two independent source verifications required for a Verified stamp.</p>
+
+  <div class="field">
+    <label>Artist name (the one your fans know)</label>
+    <input id="f-name" placeholder="e.g. Caribou" value="Caribou">
   </div>
 
-  <div class="card">
-    <h2>2. Pick 2 places that prove it's you</h2>
-    <div class="desc">Each source independently has to match your artist name. Pick the two you actually have — a profile page, a verified account, anything public.</div>
-    <div class="src-pick" id="srcPick">
-      <button data-src="apple_music" data-handle="https://music.apple.com/us/artist/356545647">Apple Music</button>
-      <button data-src="musicbrainz" data-handle="9ddce51c-2b75-4b3e-ac8c-1db09e7c89c6">MusicBrainz</button>
-      <button data-src="bandcamp" data-handle="fourtet">Bandcamp</button>
-      <button data-src="soundcloud" data-handle="four-tet">SoundCloud</button>
-      <button data-src="instagram" data-handle="fourtet">Instagram</button>
-      <button data-src="lastfm" data-handle="Four Tet">Last.fm</button>
-      <button data-src="website" data-handle="https://fourtet.net">Website</button>
-      <button data-src="tiktok" data-handle="fourtet">TikTok</button>
-    </div>
-    <div id="srcRows" style="margin-top:14px"></div>
-    <div class="hint">Tap a source to add it. We auto-fill the placeholder handle; you can change it before submitting.</div>
+  <div class="section-divider"></div>
+
+  <div class="section-label">
+    <h2>Two-source verification</h2>
+    <span class="hint">tap two that prove it's you</span>
   </div>
 
-  <div class="card">
-    <h2>3. Verify</h2>
-    <div class="desc">We hit each source, collect evidence, and 4 independent validators vote. This usually takes 1-2 minutes.</div>
-    <div class="checkboxes">
-      <label><input type="checkbox" id="raStrict" checked> Require both sources to match (recommended)</label>
-    </div>
-    <div class="actions">
-      <button class="big" id="raSubmitBtn" onclick="sendRegister()">Verify and sign</button>
-      <span id="raSubmitHint" class="hint">Click "Use local account" above to get started.</span>
-    </div>
-    <div class="result" id="raResult"></div>
+  <div class="src-pick" id="srcPick">
+    <button data-src="apple_music" data-handle="45464574">Apple Music</button>
+    <button data-src="musicbrainz" data-handle="syndicate-mb">MusicBrainz</button>
+    <button data-src="bandcamp" data-handle="">Bandcamp</button>
+    <button data-src="soundcloud" data-handle="">SoundCloud</button>
+    <button data-src="instagram" data-handle="">Instagram</button>
+    <button data-src="lastfm" data-handle="">Last.fm</button>
+    <button data-src="website" data-handle="">Website</button>
+    <button data-src="tiktok" data-handle="">TikTok</button>
+  </div>
+  <div id="srcRows" style="margin-top:10px"></div>
+
+  <div class="checkboxes" style="margin-top:14px">
+    <label><input type="checkbox" id="fStrict" checked> Strict mode (require both sources)</label>
   </div>
 
-  <!-- ── Read cards (collapsed) ────────────────────────────────────────── -->
-  <details class="card" style="padding:0">
-    <summary style="padding:18px 22px;color:var(--text);font-size:14px">Look up an existing record</summary>
-    <div style="padding:0 22px 22px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
-        <div>
-          <label>Artist by wallet</label>
-          <input id="artistWallet" class="mono" placeholder="0x…" value="0xfCeb2B7660609f15Ed3587401409eFA079B25024">
-          <div class="actions"><button onclick="queryArtist()">Query</button></div>
-          <div class="result" id="artistResult"></div>
-        </div>
-        <div>
-          <label>Is this audio track verified?</label>
-          <input id="vhHash" class="mono" value="0x1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff">
-          <div class="actions"><button onclick="queryVerified()">Query</button></div>
-          <div class="result" id="vhResult"></div>
-        </div>
+  <div class="actions" style="margin-top:18px">
+    <button class="btn" id="submitBtn">Sign &amp; submit proof →</button>
+  </div>
+</div>
+
+<div class="right">
+  <div class="step-h">step 2 of 3 — verification</div>
+  <h1 id="verify-title">Cross-referencing sources</h1>
+  <p class="sub" id="verify-sub">Live API checks via the leader. Validators independently re-derive the score.</p>
+
+  <div class="verify-status" id="verify-status">Pick an artist + two sources on the left, then submit. The leader runs 7+ free public APIs, builds the evidence, and 4 validators vote. ~1-2 min.</div>
+
+  <div class="score-banner">
+    <div>
+      <div class="label">verification score</div>
+      <div class="big"><span id="live-score">—</span><span class="denom">/100</span></div>
+    </div>
+    <div class="verdict">
+      <div class="label">consensus</div>
+      <div style="margin-top:6px"><span class="badge" id="live-badge">—</span></div>
+    </div>
+  </div>
+
+  <div id="live-logs" class="run-card" style="display:none">
+    <div class="h"><h3>Live verification log</h3><span class="pulse"><span class="pulse-dot"></span>live</span></div>
+    <div class="log-line" id="loglines"></div>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════ STATE B: certificate ══════════════ -->
+<div class="cert" id="cert">
+  <div class="crest">Provenance Registry · On-Chain Attestation</div>
+  <h1 id="cert-name">—</h1>
+  <div class="subtitle" id="cert-subtitle">verification status pending</div>
+
+  <div class="seal" id="cert-seal">—</div>
+
+  <div class="field"><span class="field-label">Wallet</span><span class="field-value mono" id="cert-wallet">—</span></div>
+  <div class="field"><span class="field-label">Handle</span><span class="field-value mono" id="cert-handle">—</span></div>
+  <div class="field"><span class="field-label">Registered</span><span class="field-value" id="cert-date">—</span></div>
+  <div class="field"><span class="field-label">Score</span><span class="field-value mono" id="cert-score">—</span></div>
+
+  <hr class="rule">
+
+  <div class="section-label">
+    <span>Two-Source Verification</span>
+    <span class="hint" id="cert-two-meta">0 / 2 matched</span>
+  </div>
+
+  <details id="cert-src1">
+    <summary><span class="label">Source I</span><span class="handle" id="s1-handle">—</span><span class="verdict" id="s1-verdict">—</span><span class="caret">▶</span></summary>
+    <div class="raw" id="s1-raw">{}</div>
+  </details>
+  <details id="cert-src2">
+    <summary><span class="label">Source II</span><span class="handle" id="s2-handle">—</span><span class="verdict" id="s2-verdict">—</span><span class="caret">▶</span></summary>
+    <div class="raw" id="s2-raw">{}</div>
+  </details>
+
+  <div class="section-label" style="margin-top: 24px;">
+    <span>Public-Data Cross-Reference</span>
+    <span class="hint" id="cert-cross-meta">—</span>
+  </div>
+
+  <div id="cross-rows"></div>
+
+  <div class="score">
+    <div class="score-num"><span id="cert-score-big">—</span><span class="denom">/100</span></div>
+    <div class="score-label">Verification Score</div>
+  </div>
+
+  <div class="breakdown" id="breakdown-rows"></div>
+
+  <div class="actions">
+    <button class="btn" id="openModal">View raw evidence</button>
+    <button class="btn ghost" id="anchorBtn">Anchor release</button>
+    <span class="cert-sep"></span>
+    <button class="btn link" id="resetBtn">Start over</button>
+  </div>
+  <div class="hint" id="cert-hint">live verification — score computed from the resolved sources above</div>
+</div>
+
+<!-- ══════════════ STATE C: modal (inspect) ══════════════ -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Raw evidence <em id="modal-sub"></em></h2>
+      <button class="modal-close" id="closeModal">close ✕</button>
+    </div>
+    <div class="modal-tabs">
+      <button class="modal-tab active" data-tab="evidence">Evidence JSON</button>
+      <button class="modal-tab" data-tab="calldata">Calldata</button>
+      <button class="modal-tab" data-tab="validator">Validator consensus</button>
+      <button class="modal-tab" data-tab="logs">Logs</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-panel active" data-panel="evidence">
+        <pre class="json" id="modal-evidence">{}</pre>
+      </div>
+      <div class="modal-panel" data-panel="calldata">
+        <pre class="json" id="modal-calldata">{}</pre>
+      </div>
+      <div class="modal-panel" data-panel="validator">
+        <pre class="json" id="modal-validator">{}</pre>
+      </div>
+      <div class="modal-panel" data-panel="logs">
+        <pre class="json" id="modal-logs">{}</pre>
       </div>
     </div>
-  </details>
+  </div>
+</div>
 
-  <details style="margin-top:18px">
-    <summary>About this demo</summary>
-    <div class="hint" style="margin-top:6px">
-      Contract: <code>0x703AdAB82751A9006aFE9c477DC344f8D9CA4384</code> on GenLayer Studio (chain 61999).
-      Source: <a href="https://github.com/interfluve-wav/ArtistLedger">interfluve-wav/ArtistLedger</a>.
-      Studionet is gasless — no GEN needed. "Use local account" generates a key in your browser and
-      stores it in localStorage; only use it on this testnet demo, never with real assets. If you have
-      a browser-injected wallet (MetaMask, etc.) the "Connect wallet" button will appear instead.
-    </div>
-  </details>
+<!-- ══════════════ flow controller ══════════════ -->
+<div class="flow-bar">
+  <span class="step-label">flow:</span>
+  <button id="stepA" class="active">A · register</button>
+  <span class="arrow">→</span>
+  <button id="stepB" disabled>B · certificate</button>
+  <span class="arrow">→</span>
+  <button id="stepC" disabled>C · inspect</button>
+  <span class="arrow">↺</span>
+  <button id="resetFlow">reset</button>
 </div>
 
 <script src="lib/genlayer-sdk.js"></script>
