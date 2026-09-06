@@ -475,12 +475,18 @@ $("anchorBtn").onclick = () => { alert("anchor_release() is a separate flow. Com
 // claimed sources. We disable strict mode so you see the real floor
 // without the strict-mode 5-point cap kicking in.
 const DEMO_ARTISTS = {
-  "Four Tet":     { am: "35888604",  mb: "53b106cf-2cc3-48b6-9b1d-5d8a8a16f5e6", bc: "fourtet",    sc: "four-tet",   ig: "fourtet",    lf: "Four Tet" },
-  "Caribou":      { am: "45464574",  mb: "735e3514-a8ae-401f-af3b-6300df1b8d2c", bc: "caribou",    sc: "caribou",    ig: "caribou",    lf: "Caribou" },
-  "Skrillex":     { am: "356545647", mb: "ae002c5d-aac6-490b-a39a-30aa9e2edf2b", bc: "skrillex",   sc: "skrillex",   ig: "skrillex",   lf: "Skrillex" },
-  "deadmau5":     { am: "78011850",  mb: "4a00ec9d-c635-463a-8cd4-eb61725f0c60", bc: "deadmau5",   sc: "deadmau5",   ig: "deadmau5",   lf: "deadmau5" },
-  "Daft Punk":    { am: "5468295",   mb: "056e4f3e-d505-4dad-8ec1-d04f521cbb56", bc: "daftpunk",   sc: "daftpunk",   ig: "daftpunk",   lf: "Daft Punk" },
-  "Aphex Twin":   { am: "39883194",  mb: "f22942a1-6f70-4f48-866e-238cb2308fbd", bc: "aphextwin",  sc: "aphextwin",  ig: "aphextwin",  lf: "Aphex Twin" },
+  "Four Tet":        { am: "35888604",  mb: "53b106cf-2cc3-48b6-9b1d-5d8a8a16f5e6", bc: "fourtet",    sc: "four-tet",   ig: "fourtet",    lf: "Four Tet" },
+  "Caribou":         { am: "45464574",  mb: "735e3514-a8ae-401f-af3b-6300df1b8d2c", bc: "caribou",    sc: "caribou",    ig: "caribou",    lf: "Caribou" },
+  "Skrillex":        { am: "356545647", mb: "ae002c5d-aac6-490b-a39a-30aa9e2edf2b", bc: "skrillex",   sc: "skrillex",   ig: "skrillex",   lf: "Skrillex" },
+  "deadmau5":        { am: "78011850",  mb: "4a00ec9d-c635-463a-8cd4-eb61725f0c60", bc: "deadmau5",   sc: "deadmau5",   ig: "deadmau5",   lf: "deadmau5" },
+  "Daft Punk":       { am: "5468295",   mb: "056e4f3e-d505-4dad-8ec1-d04f521cbb56", bc: "daftpunk",   sc: "daftpunk",   ig: "daftpunk",   lf: "Daft Punk" },
+  "Aphex Twin":      { am: "39883194",  mb: "f22942a1-6f70-4f48-866e-238cb2308fbd", bc: "aphextwin",  sc: "aphextwin",  ig: "aphextwin",  lf: "Aphex Twin" },
+  // New additions (2026-09-06, for builder-portal demo)
+  "Burial":          { am: "468355684", mb: "9ddce51c-2b75-4b3e-ac8c-1db09e7c89c6", bc: "burial",     sc: "burial",     ig: "burial",     lf: "Burial" },
+  "Floating Points": { am: "311514259", mb: "69d9c5ba-7bba-4cb7-ab32-8ccc48ad4f97", bc: "floatingpoints", sc: "floatingpoints", ig: "floatingpoints", lf: "Floating Points" },
+  "Boards of Canada":{ am: "2989314",   mb: "69158f97-4c07-4c4e-baf8-4e4ab1ed666e", bc: "boardsofcanada", sc: "boardsofcanada", ig: "boardsofcanada", lf: "Boards of Canada" },
+  "Fred again..":    { am: "1455262408", mb: "bca46a0c-25c9-42ca-98c2-e64c8a5e337e", bc: "fredagain",  sc: "fredagainagainagain", ig: "fredagainofficial", lf: "Fred again.." },
+  "Jamie xx":        { am: "405563985",  mb: "d1515727-4a93-4c0d-88cb-d7a9fce01879", bc: "jamiexx",    sc: "jamiexx",    ig: "jamiexx",    lf: "Jamie xx" },
 };
 
 function fillDemoArtist(name) {
