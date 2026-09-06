@@ -466,7 +466,7 @@ def _verify_claimed_source(
         # confirm the artist page exists via the Spotify search API
         sp = _spotify_search(artist_name, spotify_token)
         return bool(sp and sp.get("id") == sid)
-    if st in ("apple_music_url", "apple"):
+    if st in ("apple_music_url", "apple_music", "apple"):
         # artist resolves to a real Apple Music artist page; a short claimed
         # name (e.g. "A") is too weak to pin the artist, so require >= 3 chars
         if len(artist_name.strip()) < 3:
@@ -517,6 +517,20 @@ def _verify_claimed_source(
     if st in ("ipi_number", "ipi"):
         # IPI base/name number: validate the CISAC mod-101 checksum
         return _ipi_checksum_valid(handle)
+    if st in ("musicbrainz_url", "musicbrainz", "mb"):
+        # MusicBrainz artist MBID: fetch the artist and confirm the
+        # resolved name overlaps the claimed artist identity.
+        mbid = handle.rstrip("/").split("/")[-1] if "/" in handle else handle
+        if not mbid:
+            return False
+        try:
+            data = _http_get_json(f"{MUSICBRAINZ_ARTIST_URL}{mbid}?fmt=json")
+        except Exception:
+            return False
+        resolved = (data or {}).get("name", "")
+        if not resolved:
+            return False
+        return _name_token_overlap(resolved, artist_name) >= 0.5
 
     # Source with no verifiable name cross-check yet — claim-only. Layer 2
     # leaves Twitter/YouTube here (no public name-check without API keys).
@@ -615,8 +629,23 @@ def _farcaster_fname(wallet: str) -> str:
 
 # ─── Scoring ──────────────────────────────────────────────────────────────
 
-def _score_evidence(ev: Evidence, claimed_name: str) -> int:
+def _ev_get(ev, key, default=None):
+    """Read a field from an Evidence object OR a dict (consensus boundary
+    can deserialise the leader's Evidence as a plain dict, so we accept both)."""
+    if isinstance(ev, dict):
+        v = ev.get(key, default)
+        return default if v is None else v
+    return getattr(ev, key, default)
+
+
+def _score_evidence(ev, claimed_name: str) -> int:
     """Compute the deterministic score from an Evidence struct.
+
+    Accepts either an Evidence instance (leader) or a dict (post-consensus
+    deserialised payload). The cross-process consensus boundary serialises
+    the leader's return to JSON; depending on the GenVM version, the
+    receiving side may see it as a dict or as the original Evidence
+    wrapper. Supporting both keeps the scoring deterministic.
 
     Returns a Python int [0, 100]. The int is converted to u256 by the
     caller when written to storage.
@@ -624,44 +653,47 @@ def _score_evidence(ev: Evidence, claimed_name: str) -> int:
     score = 0
 
     # Tier 1 (max 45)
-    if ev.acoustid_matched:
+    if _ev_get(ev, "acoustid_matched", False):
         score += W_ACOUSTID
-    if len(ev.isrc_codes) > 0:
+    if len(_ev_get(ev, "isrc_codes", []) or []) > 0:
         score += W_ISRC
     # Spotify: 10 if verified OR (popularity >= 20 AND followers >= 1000)
-    if ev.spotify_artist_id and (
-        ev.spotify_verified
-        or (int(ev.spotify_popularity) >= 20 and int(ev.spotify_followers) >= 1000)
+    sp_id = _ev_get(ev, "spotify_artist_id", "")
+    if sp_id and (
+        _ev_get(ev, "spotify_verified", False)
+        or (int(_ev_get(ev, "spotify_popularity", 0)) >= 20
+            and int(_ev_get(ev, "spotify_followers", 0)) >= 1000)
     ):
         score += W_SPOTIFY
-    if ev.apple_music_track_present:
+    if _ev_get(ev, "apple_music_track_present", False):
         score += W_APPLE_MUSIC
 
     # Tier 2 (max 20)
-    if ev.bandcamp_handle:
+    if _ev_get(ev, "bandcamp_handle", ""):
         score += W_BANDCAMP
-    if ev.soundcloud_handle and (ev.soundcloud_verified or int(ev.soundcloud_followers) >= 100):
+    sc_handle = _ev_get(ev, "soundcloud_handle", "")
+    if sc_handle and (_ev_get(ev, "soundcloud_verified", False) or int(_ev_get(ev, "soundcloud_followers", 0)) >= 100):
         score += W_SOUNDCLOUD
-    if ev.instagram_handle:
+    if _ev_get(ev, "instagram_handle", ""):
         score += W_INSTAGRAM
-    if int(ev.lastfm_scrobble_count) >= 100:
+    if int(_ev_get(ev, "lastfm_scrobble_count", 0)) >= 100:
         score += W_LASTFM
 
     # Tier 2.5 — two-source verification (DISCO parity)
-    m = int(ev.verification_match_count)
+    m = int(_ev_get(ev, "verification_match_count", 0))
     if m >= 2:
         score += W_TWO_SOURCE_MATCH
     elif m == 1:
         score += W_SINGLE_SOURCE_MATCH
 
     # Tier 5 (max 10)
-    if int(ev.wallet_age_days) >= 90:
+    if int(_ev_get(ev, "wallet_age_days", 0)) >= 90:
         score += W_WALLET_AGE
-    if ev.ens_matches_artist or ev.farcaster_fname:
+    if _ev_get(ev, "ens_matches_artist", False) or _ev_get(ev, "farcaster_fname", ""):
         score += W_WALLET_NAME
 
     # Tier 3 (LLM, ±5)
-    bounded_adjustment = max(-W_LLM_ADJUSTMENT_RANGE, min(W_LLM_ADJUSTMENT_RANGE, ev.press_narrative_score))
+    bounded_adjustment = max(-W_LLM_ADJUSTMENT_RANGE, min(W_LLM_ADJUSTMENT_RANGE, int(_ev_get(ev, "press_narrative_score", 0))))
     score += bounded_adjustment
 
     return max(0, min(100, score))
@@ -958,7 +990,7 @@ class ProvenanceRegistry(gl.Contract):
         # (require_two_source=True, the default), registration without two
         # independently matching claimed sources is capped far below the
         # verification threshold, so consensus rejects it.
-        if require_two_source and int(consensus_evidence.verification_match_count) < 2:
+        if require_two_source and int(_ev_get(consensus_evidence, "verification_match_count", 0)) < 2:
             score = min(score, 5)
 
         sender = self._sender()
@@ -976,7 +1008,11 @@ class ProvenanceRegistry(gl.Contract):
                 name=name,
                 verified_at=u256(now),
                 score=u256(score),
-                evidence=consensus_evidence.to_json(),
+                evidence=(
+                    consensus_evidence.to_json()
+                    if hasattr(consensus_evidence, "to_json")
+                    else json.dumps(consensus_evidence)
+                ),
                 require_two_source=require_two_source,
             )
             return f"Verified ({score})"
