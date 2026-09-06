@@ -240,9 +240,13 @@ def _http_get_json(url: str) -> dict:
 
 def _acoustid_lookup(audio_hash: bytes, acoustid_key: str) -> tuple[bool, str]:
     """Look up the audio hash in AcoustID. Returns (matched, recording_mbid)."""
+    if isinstance(audio_hash, str):
+        fp = audio_hash[2:] if audio_hash.startswith("0x") else audio_hash
+    else:
+        fp = audio_hash.hex()
     url = (
         f"{ACOUSTID_URL}?client={acoustid_key}"
-        f"&duration=0&fingerprint={audio_hash.hex()}&meta=recordings+releaseids"
+        f"&duration=0&fingerprint={fp}&meta=recordings+releaseids"
     )
     data = _http_get_json(url)
     try:
