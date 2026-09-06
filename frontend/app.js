@@ -126,6 +126,59 @@ async function rpcRead(fnName, args) {
 }
 
 // ── Parse the on-chain receipt into a friendly result object ──────────
+// GenVM returns Evidence as a compact JSON object in `payload.readable`
+// with NO separators between fields (e.g. `"k1":v1"k2":v2`). The strings
+// are also embedded raw (already-decoded), not wrapped in a JSON-string.
+// The old regex `replace(/"\s*"/g, '","')` corrupted empty-string values.
+// This walker handles strings/numbers/booleans/arrays/objects/nulls and
+// empty strings correctly.
+function parseGenvmReadable(s) {
+  s = String(s).trim();
+  let i = 0, n = s.length;
+  if (s[i] === "{") i++;
+  const out = {};
+  while (i < n) {
+    while (i < n && (s[i] === " " || s[i] === "," || s[i] === "\n")) i++;
+    if (i >= n || s[i] === "}") break;
+    if (s[i] !== '"') throw new Error("expected key string at " + i + ": ..." + s.slice(Math.max(0, i - 10), i + 10));
+    let j = i + 1;
+    while (j < n && s[j] !== '"') { if (s[j] === "\\") j += 2; else j++; }
+    const key = s.slice(i + 1, j);
+    j++; // past closing "
+    if (s[j] !== ":") throw new Error("expected : at " + j);
+    j++;
+    let val, nextI = j;
+    if (s[j] === '"') {
+      let k = j + 1;
+      while (k < n && s[k] !== '"') { if (s[k] === "\\") k += 2; else k++; }
+      val = s.slice(j + 1, k);
+      nextI = k + 1;
+    } else if (s.slice(j, j + 4) === "true") { val = true; nextI = j + 4; }
+      else if (s.slice(j, j + 5) === "false") { val = false; nextI = j + 5; }
+      else if (/[0-9-]/.test(s[j])) {
+        let k = j;
+        while (k < n && /[0-9.\-eE+]/.test(s[k])) k++;
+        const num = s.slice(j, k);
+        val = num.includes(".") || num.toLowerCase().includes("e") ? parseFloat(num) : parseInt(num, 10);
+        nextI = k;
+      } else if (s[j] === "[") {
+        let d = 1, k = j + 1;
+        while (k < n && d) { if (s[k] === "[") d++; else if (s[k] === "]") d--; k++; }
+        val = JSON.parse(s.slice(j, k));
+        nextI = k;
+      } else if (s[j] === "{") {
+        let d = 1, k = j + 1;
+        while (k < n && d) { if (s[k] === "{") d++; else if (s[k] === "}") d--; k++; }
+        val = parseGenvmReadable(s.slice(j, k));
+        nextI = k;
+      } else if (s.slice(j, j + 4) === "null") { val = null; nextI = j + 4; }
+      else throw new Error("bad value at " + j + ": ..." + s.slice(Math.max(0, j - 5), j + 15));
+    out[key] = val;
+    i = nextI;
+  }
+  return out;
+}
+
 function parseReceipt(receipt) {
   let score = null, verdict = "?", evidence = null, matched = [];
   for (const lr of receipt.consensus_data.leader_receipt) {
@@ -139,14 +192,16 @@ function parseReceipt(receipt) {
     const eq = lr.eq_outputs || {};
     for (const k of Object.keys(eq)) {
       const p = eq[k].payload;
-      if (p && p.readable) {
+      if (p && typeof p.readable === "string") {
         try {
-          // GenVM readable is a JSON object with no separator between key/value
-          // pairs (e.g. "key1":val1"key2":val2). Re-parse:
-          const normalized = p.readable.replace(/"\s*"/g, '","');
-          evidence = JSON.parse("{" + normalized + "}");
+          evidence = parseGenvmReadable(p.readable);
         } catch (e) {
-          try { evidence = JSON.parse(p.readable); } catch (e2) { /* skip */ }
+          console.warn("[parseReceipt] walker failed:", e.message, "raw:", p.readable.slice(0, 200));
+          try {
+            // fallback: try direct JSON.parse (in case GenVM changes format)
+            const direct = JSON.parse(p.readable);
+            if (direct && typeof direct === "object") evidence = direct;
+          } catch (e2) { /* skip */ }
         }
       }
     }
@@ -196,8 +251,10 @@ function renderCertificate(data, receipt) {
     el.style.display = "";
     $(s.hid).textContent = s.src.handle || "(no handle)";
     const v = $(s.vid);
-    if (data.matchCount >= (i + 1) && i === 0) { v.textContent = "✓ matched"; v.className = "verdict ok"; }
-    else if (data.matchCount >= (i + 1) && i === 1) { v.textContent = "✓ matched"; v.className = "verdict ok"; }
+    // matchCount is a TOTAL across both claimed sources; we can't always know
+    // which one matched without leader per-source evidence. Mark the first N
+    // rows as matched, rest as not — but show the total separately.
+    if (data.matchCount >= (i + 1)) { v.textContent = "✓ matched"; v.className = "verdict ok"; }
     else { v.textContent = "✗ no match"; v.className = "verdict err"; }
     $(s.rid).textContent = JSON.stringify({ source: s.src.src, handle: s.src.handle, contract_src: toContractSrc(s.src.src) }, null, 2);
   });
@@ -408,14 +465,26 @@ $("submitBtn").onclick = async () => {
 (async function boot() {
   try {
     client = GL.createClient({ chain: GL.chains.studionet });
-    let schema;
-    try { schema = await client.request({ method: "gen_getContractSchema", params: [CONTRACT] }); }
-    catch (e) { schema = await client.getContractSchema({ address: CONTRACT }); }
+    let schema = null;
+    // First try the raw JSON-RPC method (works even when the explorer indexer
+    // is paused — this is what we actually rely on for read access).
+    try {
+      schema = await client.request({ method: "gen_getContractSchema", params: [CONTRACT] });
+    } catch (e) {
+      // Fall back to the SDK helper. NOTE: this calls through the explorer
+      // indexer and can fail with HTTP 500 / SQL errors when the indexer is
+      // paused; we just log it and continue without blocking boot.
+      try { schema = await client.getContractSchema({ address: CONTRACT }); }
+      catch (e2) { console.warn("[boot] schema fetch failed:", e2.message); }
+    }
     const methods = Object.keys((schema && schema.methods) || {}).join(", ");
     $("rpcDot").classList.add("on");
-    $("rpcStatus").textContent = "connected · " + methods.split(",").length + " methods";
+    $("rpcStatus").textContent = methods
+      ? `connected · ${methods.split(",").length} methods`
+      : "connected (schema unavailable)";
   } catch (e) {
     $("rpcDot").classList.add("err");
     $("rpcStatus").textContent = "RPC unreachable";
+    console.error("[boot]", e);
   }
 })();

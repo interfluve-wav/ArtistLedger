@@ -2,7 +2,7 @@
 
 # ruff: noqa: BLE001,S110
 """
-OnChainProvenanceRegistry — GenLayer Intelligent Contract v0.2.0
+OnChainProvenanceRegistry — GenLayer Intelligent Contract v0.3.4
 
 Tracks real-world music releases with provenance validated through
 deterministic cross-source verification + LLM qualitative adjustment.
