@@ -1,7 +1,7 @@
 /* ArtistLedger frontend — talks to GenLayer Studio RPC via genlayer-js SDK. */
 "use strict";
 
-const CONTRACT = "0x4Da983553c0aafc16fD1Be26AcE5c0C2308EE760";
+const CONTRACT = "0x14b79645F7992c27e2a5Ec61420dD9a82206103c";
 const GL = window.GenLayerSDK;
 
 let client = null;      // read-only client (no account)

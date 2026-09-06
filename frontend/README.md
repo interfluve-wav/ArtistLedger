@@ -3,7 +3,7 @@
 Static frontend for the ArtistLedger Intelligent Contract, deployed on
 GenLayer Studio Network (chain 61999).
 
-- Contract: `0x4Da983553c0aafc16fD1Be26AcE5c0C2308EE760`
+- Contract: `0x14b79645F7992c27e2a5Ec61420dD9a82206103c`
 - RPC: `https://studio.genlayer.com/api` (CORS open)
 
 ## Run locally
