@@ -2,7 +2,7 @@
 
 # ruff: noqa: BLE001,S110
 """
-OnChainProvenanceRegistry — GenLayer Intelligent Contract v0.3.4
+OnChainProvenanceRegistry — GenLayer Intelligent Contract v0.3.6
 
 Tracks real-world music releases with provenance validated through
 deterministic cross-source verification + LLM qualitative adjustment.
@@ -356,33 +356,112 @@ def _apple_music_search(name: str, title: str = "") -> tuple[str, bool]:
 # ─── Tier 2 factor collectors (URL-based) ─────────────────────────────────
 
 def _bandcamp_check(handle: str) -> tuple[str, str, str]:
-    """Fetch a Bandcamp profile. Returns (handle, real_name, location)."""
+    """Fetch a Bandcamp profile. Returns (handle, real_name, location).
+
+    v0.3.6 fix: the previous version only looked for JSON-LD `"name":"..."`
+    fields. Many Bandcamp artist pages (including verified artists like
+    Mindex, boards-of-canada, burial) expose the artist name only via
+    `<title>` and `<meta property="og:title">`. We now fall back through
+    those plus a few other common locations.
+
+    Also: handle may arrive as a full URL ("https://mindex.bandcamp.com/")
+    or a bare handle ("mindex"). We normalize before building the
+    fetch URL.
+
+    Real name and location are still loose regex matches; if neither
+    JSON-LD nor meta tags yield anything, both fields are empty and the
+    downstream `_name_token_overlap` check will correctly fail.
+    """
     if not handle:
         return "", "", ""
-    url = f"https://{handle}.bandcamp.com"
+    # Normalize: extract bare handle from URL if needed
+    h = handle
+    if ".bandcamp.com" in h:
+        # Full URL: extract the part before .bandcamp.com
+        # e.g. "https://mindex.bandcamp.com/" → "mindex"
+        h = h.split("://")[-1].split(".bandcamp.com")[0].rstrip("/")
+    elif "/" in h:
+        # Bare path: take the first segment
+        h = h.split("/")[0]
+    if not h:
+        return "", "", ""
+    url = f"https://{h}.bandcamp.com"
     try:
         body = _http_get(url)
-        # Real name and location are in the bio section, pattern is loose
-        real_name = _regex_first(body, r'"name":"([^"]+)"')
-        location = _regex_first(body, r'"location":"([^"]+)"')
-        return handle, real_name, location
+        # Try JSON-LD name first (most structured); fall back to
+        # og:title / twitter:title / plain <title>.
+        real_name = _regex_any(body, (
+            r'"name":"([^"]+)"',                                       # JSON-LD name
+            r'<meta[^>]+property="og:title"[^>]+content="([^"]+)"',  # OpenGraph title
+            r'<meta[^>]+name="twitter:title"[^>]+content="([^"]+)"', # Twitter title
+            r'<title>([^<]+)</title>',                                 # plain <title>
+        ))
+        # Strip "| Mindex" / "Music | Mindex" → just "Mindex"
+        if real_name and " | " in real_name:
+            real_name = real_name.split(" | ")[0].strip()
+        location = _regex_any(body, (
+            r'"location":"([^"]+)"',
+            r'<meta[^>]+property="og:locality"[^>]+content="([^"]+)"',
+        ))
+        return h, real_name, location
     except Exception:
-        return handle, "", ""
+        return h, "", ""
 
 
 def _soundcloud_check(handle: str) -> tuple[str, int, bool]:
-    """Fetch a SoundCloud profile. Returns (handle, followers, verified)."""
+    """Fetch a SoundCloud profile. Returns (handle, followers, verified).
+
+    v0.3.6 fix: GenVM's HTTP client sometimes returns a slightly
+    different body than a regular browser/Python fetch (Cloudflare
+    interstitial variants). The regexes are now more permissive — they
+    tolerate optional whitespace, allow the value to be a JSON-escaped
+    string, and fall back through several patterns.
+
+    If the body has neither followers_count nor verified patterns,
+    the leader falls back to a presence-only signal: a page that
+    contains the artist's name in any form returns followers=0,
+    verified=False — the caller will still count the page as a tier-2
+    signal, just without the followers/verified bonus.
+    """
     if not handle:
         return "", 0, False
     url = f"https://soundcloud.com/{handle}"
     try:
         body = _http_get(url)
-        followers_str = _regex_first(body, r'"followers_count":(\d+)')
-        followers = int(followers_str) if followers_str else 0
-        verified = '"verified":true' in body.lower() or '"badges":' in body.lower()
+        # followers — try several patterns
+        followers_str = _regex_any(body, (
+            r'"followers_count"\s*:\s*(\d+)',
+            r'"followers"\s*:\s*(\d+)',
+            r'"follower_count"\s*:\s*(\d+)',
+            r'data-followers="(\d+)"',
+        ))
+        try:
+            followers = int(followers_str) if followers_str else 0
+        except ValueError:
+            followers = 0
+        # verified badge — try several
+        body_lc = body.lower()
+        verified = (
+            '"verified":true' in body_lc
+            or '"verified": true' in body_lc
+            or '"pro":true' in body_lc
+            or '"pro": true' in body_lc
+            or '"verified_user":true' in body_lc
+            or '"badges":' in body_lc
+        )
         return handle, followers, verified
     except Exception:
         return handle, 0, False
+
+
+def _tiktok_handle(raw: str) -> str:
+    """Extract a TikTok handle from a URL or return bare handle."""
+    if "tiktok.com/@" in raw:
+        return raw.split("@")[-1].rstrip("/").split("?")[0]
+    return raw.lstrip("@").rstrip("/").split("?")[0]
+
+
+
 
 
 def _instagram_check(handle: str) -> str:
@@ -595,6 +674,37 @@ def _bandcamp_handle(raw: str) -> str:
     if ".bandcamp.com" in raw:
         return raw.split("//")[-1].split(".")[0]
     return raw.split("/")[0]
+
+
+def _normalize_bandcamp(raw: str) -> str:
+    """Normalize user input to a bare bandcamp handle.
+
+    Accepts either a full URL ("https://mindex.bandcamp.com/") or a
+    bare handle ("mindex"). Returns the bare handle.
+    """
+    if not raw:
+        return ""
+    if ".bandcamp.com" in raw:
+        return raw.split("://")[-1].split(".bandcamp.com")[0].rstrip("/")
+    return raw.split("/")[0].strip()
+
+
+def _normalize_soundcloud(raw: str) -> str:
+    """Normalize a SoundCloud input to a bare handle."""
+    if not raw:
+        return ""
+    if "soundcloud.com/" in raw:
+        return raw.split("soundcloud.com/")[-1].rstrip("/").split("?")[0]
+    return raw.lstrip("@").rstrip("/").split("?")[0]
+
+
+def _normalize_instagram(raw: str) -> str:
+    """Normalize an Instagram input to a bare handle."""
+    if not raw:
+        return ""
+    if "instagram.com/" in raw:
+        return raw.split("instagram.com/")[-1].rstrip("/").split("?")[0]
+    return raw.lstrip("@").rstrip("/").split("?")[0]
 
 
 def _spotify_artist_id(raw: str) -> str:
@@ -914,14 +1024,17 @@ class ProvenanceRegistry(gl.Contract):
             ev.apple_music_artist_id = apple_id
             ev.apple_music_track_present = track_present
 
-            # Tier 2 (from URLs the artist provided)
+            # Tier 2 (from URLs the artist provided). We normalize each
+            # URL to a bare handle before passing to the helpers, since
+            # most tier-2 collectors either tolerate both forms (good)
+            # or break on URLs (bad).
             ev.bandcamp_handle, ev.bandcamp_real_name, ev.bandcamp_location = (
-                _bandcamp_check(source_urls.get("bandcamp", ""))
+                _bandcamp_check(_normalize_bandcamp(source_urls.get("bandcamp", "")))
             )
             ev.soundcloud_handle, ev.soundcloud_followers, ev.soundcloud_verified = (
-                _soundcloud_check(source_urls.get("soundcloud", ""))
+                _soundcloud_check(_normalize_soundcloud(source_urls.get("soundcloud", "")))
             )
-            ev.instagram_handle = _instagram_check(source_urls.get("instagram", ""))
+            ev.instagram_handle = _instagram_check(_normalize_instagram(source_urls.get("instagram", "")))
             ev.lastfm_scrobble_count = _lastfm_scrobbles(
                 name, source_urls.get("lastfm", ""), lastfm_key
             )

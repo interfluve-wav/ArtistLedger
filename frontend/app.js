@@ -487,6 +487,8 @@ const DEMO_ARTISTS = {
   "Boards of Canada":{ am: "2989314",   mb: "69158f97-4c07-4c4e-baf8-4e4ab1ed666e", bc: "boardsofcanada", sc: "boardsofcanada", ig: "boardsofcanada", lf: "Boards of Canada" },
   "Fred again..":    { am: "1455262408", mb: "bca46a0c-25c9-42ca-98c2-e64c8a5e337e", bc: "fredagain",  sc: "fredagainagainagain", ig: "fredagainofficial", lf: "Fred again.." },
   "Jamie xx":        { am: "405563985",  mb: "d1515727-4a93-4c0d-88cb-d7a9fce01879", bc: "jamiexx",    sc: "jamiexx",    ig: "jamiexx",    lf: "Jamie xx" },
+  // Mindex (added 2026-09-06 in response to user submit — exposed v0.3.4 tier-2 bugs)
+  "Mindex":          { am: "295430906",  mb: "",                                  bc: "mindex",     sc: "mindex",     ig: "mindex",     lf: "Mindex" },
 };
 
 function fillDemoArtist(name) {
@@ -496,11 +498,19 @@ function fillDemoArtist(name) {
   // clear picked
   picked.length = 0;
   document.querySelectorAll("#srcPick button.on").forEach(b => b.classList.remove("on"));
-  // pre-pick apple_music + musicbrainz with real handles
+  // pre-pick two sources. Default: apple_music + musicbrainz. If
+  // musicbrainz is missing (some artists like Mindex aren't on MB),
+  // fallback to bandcamp for the second source.
   const amBtn = document.querySelector(`#srcPick button[data-src="apple_music"]`);
-  const mbBtn = document.querySelector(`#srcPick button[data-src="musicbrainz"]`);
+  const primary = d.mb ? "musicbrainz" : "bandcamp";
+  const primaryHandle = d.mb || d.bc;
+  const primaryBtn = document.querySelector(`#srcPick button[data-src="${primary}"]`);
   if (amBtn) { amBtn.click(); document.querySelector(`#srcRows input[data-h="${picked.length - 1}"]`).value = d.am; picked[picked.length - 1].handle = d.am; }
-  if (mbBtn) { mbBtn.click(); document.querySelector(`#srcRows input[data-h="${picked.length - 1}"]`).value = d.mb; picked[picked.length - 1].handle = d.mb; }
+  if (primaryBtn && primary !== "apple_music") {
+    primaryBtn.click();
+    document.querySelector(`#srcRows input[data-h="${picked.length - 1}"]`).value = primaryHandle;
+    picked[picked.length - 1].handle = primaryHandle;
+  }
   // disable strict mode for demo so we see the real computed score
   $("fStrict").checked = false;
   // Add the bonus handles to source_urls via extra (un-toggled) suggestions in picked rows
