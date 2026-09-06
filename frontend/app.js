@@ -81,7 +81,7 @@ $("srcPick").addEventListener("click", e => {
 function updateSubmitHint() {
   const hint = $("raSubmitHint");
   if (!walletAddr) {
-    hint.textContent = "Connect a wallet first.";
+    hint.textContent = "Click \"Use local account\" above to get started.";
   } else if (picked.length < 1) {
     hint.textContent = "Pick at least 1 source above.";
   } else {
@@ -320,7 +320,7 @@ function renderResult(receipt) {
 }
 
 window.sendRegister = async () => {
-  if (!walletAddr) { showError("raResult", new Error("Connect a wallet first.")); return; }
+  if (!walletAddr) { showError("raResult", new Error("Click \"Use local account\" first.")); return; }
   if (picked.length < 1) { showError("raResult", new Error("Pick at least 1 source.")); return; }
 
   // Build the contract args. The first two picked sources become vs1/vh1 and vs2/vh2.
@@ -375,6 +375,13 @@ window.sendRegister = async () => {
 };
 
 // ── Boot ──────────────────────────────────────────────────────────────
+
+// Show "Connect wallet" only if a browser-injected wallet is present.
+// On studionet, "Use local account" is the recommended path; many users
+// have 1inch/Trust/MetaMask mobile that don't inject window.ethereum.
+if (typeof window !== "undefined" && window.ethereum) {
+  $("connectBtn").style.display = "";
+}
 
 (async function boot() {
   try {
