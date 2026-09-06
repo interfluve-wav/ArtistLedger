@@ -471,6 +471,17 @@ def _verify_claimed_source(
         # name (e.g. "A") is too weak to pin the artist, so require >= 3 chars
         if len(artist_name.strip()) < 3:
             return False
+        # If the handle is a bare numeric Apple Music artist ID, confirm it
+        # directly; otherwise search by name.
+        if handle.isdigit() and len(handle) >= 6:
+            url = f"https://itunes.apple.com/lookup?id={handle}&entity=musicArtist&limit=1"
+            data = _http_get_json(url)
+            results = (data or {}).get("results", [])
+            if not results or results[0].get("wrapperType") != "artist":
+                return False
+            return _name_token_overlap(
+                results[0].get("artistName", ""), artist_name
+            ) >= 0.5
         artist_id, _ = _apple_music_search(artist_name, "")
         return bool(artist_id)
     if st in ("bandcamp_url", "bandcamp"):
