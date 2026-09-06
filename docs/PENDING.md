@@ -17,15 +17,43 @@ expected impact on verification correctness.
   so the validator's `json.loads(leader_result.calldata)` path works
   for any JSON-string wire format.
 
-## Required before testnet deploy
+## Done in v0.3.4+
 
-- **GenVM deploy compatibility (DONE).** Blank line after the runner
-  comment, single `gl.Contract` subclass per file (Artist/Release/
-  Dispute → `@allow_storage @dataclass`), `__init__` added. Verified:
-  Studio's live `gen_getContractSchemaForCode` returns SCHEMA-OK with
-  all 8 methods on GenVM v0.2.16.
-- **Faucet-funded wallet (DONE — user wallet, 100 GEN on Bradbury).**
+- **Deterministic validator (commit `8be39ad`, awaiting on-chain
+  verification).** The old validator re-ran every public API and
+  re-derived the score; on studionet that drifted → UNDETERMINED.
+  New validator_fn in `register_artist` does NOT re-fetch any API.
+  It parses the leader's evidence JSON, runs plausibility guards
+  (numeric ranges, fabrication red flags), recomputes the score
+  deterministically, and requires at least one tier-1 signal so a
+  phantom leader with all-zero evidence can't squeak past. The
+  threshold check (>=70) on the consensus_evidence score is the
+  actual verification gate; the validator's narrower job is "is
+  this evidence sound enough to score meaningfully."
+- **Standalone validator tests (commit pending).**
+  `tests/test_validator_standalone.py` exercises the new
+  validator's pure logic (plausibility guards, tier-1 floor,
+  score reproduction from a dict) without requiring a genlayer
+  runtime. 10/10 pass.
+- **register_artist smoke harness (commit pending).**
+  `examples/register_artist_smoke.py` runs `find_artist` for an
+  artist, builds a full `register_artist` call, prints it for
+  inspection, and (with `--submit`) sends it via `genlayer write`.
+  Dry-run mode works without GEN.
+- **Faucet watcher (commit pending).** `scripts/faucet_watch.sh`
+  polls one or more addresses on studionet every 30s and exits 0
+  the moment any shows non-zero balance.
+
+## Required before on-chain verification (blocked on funding)
+
+- **Studionet faucet deliverability.** No GEN has settled to any
+  of our three test addresses (`0xfCeb…5024`, `0x89ee…0bd6`,
+  `0xd3b8…04a9`) on chain. The portal UI shows "claimed" but the
+  chain returns 0. Either the claim is queued or it went to a
+  different network. Until this is resolved, the on-chain test
+  of `register_artist` for Burial cannot run.
 - **AcoustID API key** — still needed out-of-band for live scoring.
+  Stored in `.env` (gitignored) and used by `_acoustid_lookup`.
 
 ## Required before broad release (not blocking testnet)
 
