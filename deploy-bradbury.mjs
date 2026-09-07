@@ -29,41 +29,41 @@ if (!pk) {
   process.exit(1);
 }
 
-// Create a local account (the SDK signs locally with the provided pk;
-// the key never leaves your machine).
+// Create a local account (the SDK signs locally with the provided pk).
 const account = createAccount(pk);
 console.log(`Deployer: ${account.address}`);
 
+// Build a viem-compatible chain config so the SDK uses the right RPC.
 const client = createClient({
   chain: {
     id: CHAIN_ID,
     name: 'Bradbury',
     rpcUrls: { default: { http: [BRADBURY_RPC] } },
     nativeCurrency: { name: 'GEN', symbol: 'GEN', decimals: 18 },
+    testnet: true,
+    // Inject the consensusMainContract so deployContract routes to it.
+    consensusMainContract: BRADBURY_MAIN_CONTRACT,
   },
   account,
 });
 
-// Read the contract source.
-const contractSrc = readFileSync(
+// Read the contract source as UTF-8 text (NOT hex).
+const contractCode = readFileSync(
   new URL('./contracts/ProvenanceRegistry.py', import.meta.url),
   'utf8'
 );
-console.log(`Contract source: ${contractSrc.length} bytes`);
+console.log(`Contract source: ${contractCode.length} bytes`);
 
-// GenLayer deploy protocol: send the contract source as tx data
-// to the consensusMainContract. The node compiles it and creates
-// a new contract at a derived address. No constructor args
-// required (ProvenanceRegistry takes none).
-const dataHex = '0x' + Buffer.from(contractSrc, 'utf8').toString('hex');
-
-console.log(`\nSending deploy tx to ${BRADBURY_MAIN_CONTRACT}...`);
+console.log(`\nDeploying to ${BRADBURY_MAIN_CONTRACT}...`);
 let txHash;
 try {
-  txHash = await client.sendTransaction({
-    to: BRADBURY_MAIN_CONTRACT,
-    value: 0n,
-    data: dataHex,
+  // The SDK's deployContract wraps the consensus contract's deploy
+  // function with proper ABI encoding. args is the constructor
+  // args (empty list — ProvenanceRegistry has no constructor args).
+  txHash = await client.deployContract({
+    code: contractCode,
+    args: [],
+    leaderOnly: false,
   });
 } catch (e) {
   console.error('Deploy failed:', e.message || e);
@@ -74,30 +74,27 @@ try {
 console.log(`\n✅ tx submitted: ${txHash}`);
 
 // Poll for receipt.
-console.log('Waiting for FINALIZED receipt (polls every 4s, up to 4 min)...');
+console.log('Waiting for FINALIZED receipt (polls every 5s, up to ~4 min)...');
 let receipt = null;
-for (let i = 0; i < 60; i++) {
-  await new Promise((r) => setTimeout(r, 4000));
+for (let i = 0; i < 50; i++) {
+  await new Promise((r) => setTimeout(r, 5000));
   try {
-    const r = await client.getTransaction({ hash: txHash });
-    if (r && (r.blockNumber || r.status === 'FINALIZED' || r.status_name === 'FINALIZED')) {
-      receipt = r;
-      break;
-    }
+    const r = await client.waitForTransactionReceipt({
+      hash: txHash,
+      retries: 1,
+      interval: 1000,
+    });
+    if (r) { receipt = r; break; }
   } catch (e) {
-    // keep polling — RPC may transiently 404 before indexing
+    // keep polling
   }
   process.stdout.write('.');
 }
 console.log();
 
 if (!receipt) {
-  console.error('Timed out waiting for receipt after 4 minutes.');
+  console.error('Timed out waiting for receipt after ~4 minutes.');
   console.error(`Check tx on explorer: https://explorer-bradbury.genlayer.com`);
-  console.error(`Or query directly:`);
-  console.error(`  curl https://rpc-bradbury.genlayer.com/api \\`);
-  console.error(`    -X POST -H "Content-Type: application/json" \\`);
-  console.error(`    -d '{"jsonrpc":"2.0","method":"eth_getTransactionReceipt","params":["${txHash}"],"id":1}'`);
   process.exit(1);
 }
 
@@ -108,11 +105,13 @@ console.log(JSON.stringify(
   2
 ));
 
-// Extract contract address from receipt's `to` field (deploy creates
-// a new contract at the `to` address) or from contractAddress field.
+// The new contract address is in the receipt (per the CLI's pattern):
+//   const contractAddress = result.data?.contract_address ??
+//                         result.txDataDecoded?.contractAddress;
 const newContract =
+  receipt.data?.contract_address ||
+  receipt.txDataDecoded?.contractAddress ||
   receipt.contractAddress ||
-  receipt.to ||
   '(check receipt fields above)';
 
 console.log(`\n========================================`);
