@@ -17,49 +17,42 @@ import { readFileSync } from 'node:fs';
 import {
   createClient,
   createAccount,
+  chains,
 } from 'genlayer-js';
 
-const BRADBURY_RPC = 'https://rpc-bradbury.genlayer.com';
-const BRADBURY_MAIN_CONTRACT = '0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D';
-const CHAIN_ID = 4221;
-
+const BRADBURY = chains.testnetBradbury;  // pre-configured in the SDK
 const pk = process.env.DEPLOYER_PK;
 if (!pk) {
   console.error('Set DEPLOYER_PK="0x<hex private key>"');
   process.exit(1);
 }
 
-// Create a local account (the SDK signs locally with the provided pk).
 const account = createAccount(pk);
 console.log(`Deployer: ${account.address}`);
 
-// Build a viem-compatible chain config so the SDK uses the right RPC.
+// Use the SDK's pre-configured testnetBradbury chain — it has the
+// full consensusMainContract { address, abi } object already wired.
 const client = createClient({
-  chain: {
-    id: CHAIN_ID,
-    name: 'Bradbury',
-    rpcUrls: { default: { http: [BRADBURY_RPC] } },
-    nativeCurrency: { name: 'GEN', symbol: 'GEN', decimals: 18 },
-    testnet: true,
-    // Inject the consensusMainContract so deployContract routes to it.
-    consensusMainContract: BRADBURY_MAIN_CONTRACT,
-  },
+  chain: BRADBURY,
   account,
 });
 
-// Read the contract source as UTF-8 text (NOT hex).
+console.log(`Chain: ${BRADBURY.name} (id ${BRADBURY.id})`);
+console.log(`Consensus main contract: ${BRADBURY.consensusMainContract?.address}`);
+
+// Read the contract source as UTF-8 text.
 const contractCode = readFileSync(
   new URL('./contracts/ProvenanceRegistry.py', import.meta.url),
   'utf8'
 );
 console.log(`Contract source: ${contractCode.length} bytes`);
 
-console.log(`\nDeploying to ${BRADBURY_MAIN_CONTRACT}...`);
+console.log(`\nDeploying...`);
 let txHash;
 try {
   // The SDK's deployContract wraps the consensus contract's deploy
-  // function with proper ABI encoding. args is the constructor
-  // args (empty list — ProvenanceRegistry has no constructor args).
+  // function with proper ABI encoding. ProvenanceRegistry has no
+  // constructor args.
   txHash = await client.deployContract({
     code: contractCode,
     args: [],
@@ -105,9 +98,6 @@ console.log(JSON.stringify(
   2
 ));
 
-// The new contract address is in the receipt (per the CLI's pattern):
-//   const contractAddress = result.data?.contract_address ??
-//                         result.txDataDecoded?.contractAddress;
 const newContract =
   receipt.data?.contract_address ||
   receipt.txDataDecoded?.contractAddress ||
