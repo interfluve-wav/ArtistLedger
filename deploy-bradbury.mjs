@@ -3,21 +3,21 @@
 // Usage on your Mac:
 //   1. cd ArtistLedger
 //   2. git checkout final-calls && git pull
-//   3. export DEPLOYER_PK=0x<your private key for 0xfCeb2B7...>
-//   4. node deploy-bradbury.mjs
+//   3. npm install   (so node_modules/genlayer-js exists)
+//   4. export DEPLOYER_PK="0x<your private key for 0xfCeb2B7...>"
+//   5. node deploy-bradbury.mjs
 //
 // Output:
 //   Transaction Hash: 0x...
 //   Contract Address: 0x...   <-- paste this back to Hermes
 //
-// Requires: Node 18+, the genlayer-js SDK at the global path
-// /usr/local/lib/node_modules/genlayer/node_modules/genlayer-js
+// Requires: Node 18+.
 
 import { readFileSync } from 'node:fs';
 import {
   createClient,
   createAccount,
-} from '/usr/local/lib/node_modules/genlayer/node_modules/genlayer-js/dist/index.js';
+} from 'genlayer-js';
 
 const BRADBURY_RPC = 'https://rpc-bradbury.genlayer.com';
 const BRADBURY_MAIN_CONTRACT = '0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D';
@@ -25,7 +25,7 @@ const CHAIN_ID = 4221;
 
 const pk = process.env.DEPLOYER_PK;
 if (!pk) {
-  console.error('Set DEPLOYER_PK=<hex private key, with or without 0x prefix>');
+  console.error('Set DEPLOYER_PK="0x<hex private key>"');
   process.exit(1);
 }
 
@@ -33,7 +33,6 @@ if (!pk) {
 // the key never leaves your machine).
 const account = createAccount(pk);
 console.log(`Deployer: ${account.address}`);
-console.log(`Balance check on Bradbury...`);
 
 const client = createClient({
   chain: {
