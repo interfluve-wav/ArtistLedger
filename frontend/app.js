@@ -21,6 +21,51 @@ function $(id) { return document.getElementById(id); }
 function shortAddr(a) { return a.slice(0, 6) + "…" + a.slice(-4); }
 function replacer(_k, v) { return typeof v === "bigint" ? v.toString() : v; }
 
+// ── Artist portrait (Wikipedia REST summary, keyless) ─────────────────
+// Fetched only after the seal flips. Plain-name lookups can land on
+// disambiguation pages ("Burial" → the ritual, "Caribou" → the deer), so
+// for known demo artists we use the disambiguated title directly.
+const WIKI_TITLES = {
+  "Four Tet": "Four_Tet", "Caribou": "Caribou_(musician)", "Burial": "Burial_(musician)",
+  "Aphex Twin": "Aphex_Twin", "Boards of Canada": "Boards_of_Canada",
+  "Floating Points": "Floating_Points", "Fred again..": "Fred_again..",
+  "Jamie xx": "Jamie_xx", "Skrillex": "Skrillex", "deadmau5": "Deadmau5",
+  "Daft Punk": "Daft_Punk",
+};
+async function fetchArtistPortrait(name) {
+  const box = $("cert-photo");
+  const img = $("cert-photo-img");
+  const holder = $("cert-photo-holder");
+  const initial = $("cert-photo-initial");
+  if (!box) return;
+  // reset to placeholder while loading
+  img.removeAttribute("src");
+  img.style.display = "none";
+  holder.style.display = "flex";
+  box.style.display = "flex";
+  if (initial) initial.textContent = (name.trim()[0] || "?").toUpperCase();
+
+  const title = WIKI_TITLES[name] || name.trim().replace(/\s+/g, "_");
+  try {
+    const url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(title);
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error("wiki " + res.status);
+    const d = await res.json();
+    // guard: wrong-entity lookups (disambiguation pages have no thumbnail,
+    // but some do — e.g. "Burial" the practice). Accept the image only when
+    // the summary describes a person/band.
+    const desc = (d.description || "").toLowerCase();
+    const kind = (d.type === "standard" && /(singer|musician|band|dj|artist|duo|group|producer)/.test(desc)) || WIKI_TITLES[name];
+    const src = d.thumbnail && d.thumbnail.source;
+    if (src && kind) {
+      img.onload = () => { img.style.display = "block"; holder.style.display = "none"; };
+      img.onerror = () => { holder.style.display = "flex"; };
+      img.src = src;
+      img.alt = name + " — portrait via Wikipedia";
+    }
+  } catch { /* placeholder initial stays */ }
+}
+
 // Map short source names → contract's 13-enum source types.
 function toContractSrc(s) {
   const map = {
@@ -288,6 +333,8 @@ function renderCertificate(data, receipt) {
   const handle = $("f-name").value.toLowerCase().replace(/[^a-z0-9]+/g, "") || "artist";
   $("cert-handle").textContent = "@" + handle;
   $("cert-date").textContent = new Date().toISOString().slice(0, 16).replace("T", " · ") + " UTC";
+  if (ok) fetchArtistPortrait($("f-name").value.trim() || "—");
+  else $("cert-photo").style.display = "none";
   // Show BOTH scores: strict (on-chain) for honesty + friendly (lenient)
   // for the demo. The seal uses the friendlier verdict.
   $("cert-score").textContent = `${data.score ?? "?"}/100 strict · ${friendly}/100 lenient · ${ok ? "VRFD" : "NOT VRFD"}`;

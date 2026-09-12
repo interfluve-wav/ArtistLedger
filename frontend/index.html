@@ -260,6 +260,22 @@
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   .cert-inner { background: var(--panel); border: 1px solid var(--line-ui); border-radius: var(--r-xl); padding: var(--s7) var(--s7) var(--s6); }
   .cert .crest { text-align: center; font-family: var(--mono); font-size: 9px; letter-spacing: .28em; text-transform: uppercase; color: var(--ink-3); margin-bottom: var(--s4); }
+  .cert-head { display: flex; align-items: center; gap: var(--s4); margin-bottom: var(--s5); }
+  .cert-head h1 { text-align: left; margin-bottom: 4px; }
+  .cert-head .subtitle { text-align: left; margin-bottom: 0; }
+  .cert-photo {
+    position: relative; width: 76px; height: 76px; flex-shrink: 0;
+    border-radius: var(--r-lg); overflow: hidden;
+    border: 1px solid var(--line-soft); background: var(--panel-2);
+  }
+  .cert-photo img { width: 100%; height: 100%; object-fit: cover; display: none; filter: grayscale(35%) contrast(1.05); }
+  .cert-photo-holder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .cert-photo-holder span { font-family: var(--mono); font-size: 24px; color: var(--ink-3); }
+  .cert-photo-src {
+    position: absolute; bottom: 0; right: 0; font-family: var(--mono); font-size: 7px;
+    letter-spacing: .1em; color: var(--ink-3); background: rgba(0,0,0,.6);
+    padding: 2px 5px; border-top-left-radius: 6px;
+  }
   .cert h1 { font-size: 28px; font-weight: 500; line-height: 1.15; text-align: center; margin-bottom: 6px; letter-spacing: -.02em; color: #fff; }
   .cert .subtitle { text-align: center; color: var(--ink-3); margin-bottom: var(--s6); font-size: 12px; font-weight: 300; letter-spacing: .02em; }
   .cert .seal {
@@ -569,10 +585,18 @@
       <div class="cert" id="cert">
         <div class="cert-inner">
           <div class="crest">Provenance Registry · On-Chain Attestation</div>
-          <h1 id="cert-name">—</h1>
-          <div class="subtitle" id="cert-subtitle">verification status pending</div>
-
-          <div class="seal" id="cert-seal">—</div>
+          <div class="cert-head">
+            <div class="cert-photo" id="cert-photo" style="display:none">
+              <div class="cert-photo-holder" id="cert-photo-holder"><span id="cert-photo-initial">?</span></div>
+              <img id="cert-photo-img" alt="" style="display:none">
+              <span class="cert-photo-src">WIKI</span>
+            </div>
+            <div style="flex:1;min-width:0">
+              <h1 id="cert-name">—</h1>
+              <div class="subtitle" id="cert-subtitle">verification status pending</div>
+            </div>
+            <div class="seal" id="cert-seal">—</div>
+          </div>
 
           <div class="field"><span class="field-label">Wallet</span><span class="field-value mono" id="cert-wallet">—</span></div>
           <div class="field"><span class="field-label">Handle</span><span class="field-value mono" id="cert-handle">—</span></div>
