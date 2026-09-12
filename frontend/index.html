@@ -2,427 +2,625 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ArtistLedger — Register → Certificate → Inspect</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://code.iconify.design/iconify-icon/1.0.7/iconify-icon.min.js"></script>
 <style>
   /* ═════════════ tokens ═════════════ */
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #fafaf7;
-    --paper: #f7f3ec;
-    --ink: #1a1814;
-    --ink-2: #5b6075;
-    --ink-3: #9aa0b3;
-    --rule: #d8d2c5;
-    --rule-soft: #ebe6da;
-    --accent: #8a3a1f;
-    --muted: #6b655a;
-    --ok: #2f5d3a;
-    --warn: #8a5a1f;
-    --err: #8a3a1f;
-    --code-bg: #f0ebde;
-    --line-ui: #e6e3da;
-    --accent-ui: #2563eb;
-    --accent-ui-soft: #dbeafe;
+    /* surface */
+    --bg: #050505;
+    --panel: #0a0a0a;
+    --panel-2: #09090b;
+    --ink: #e4e4e7;
+    --ink-2: #a1a1aa;
+    --ink-3: #52525b;
+    --line-ui: #18181b;
+    --line-soft: #27272a;
+    /* semantic */
+    --ok: #34d399;
+    --warn: #fbbf24;
+    --err: #f87171;
+    --blue: #60a5fa;
+    --blue-500: #3b82f6;
+    --purple: #a855f7;
+    /* legacy var aliases used by app.js inline styles */
+    --accent-ui: #60a5fa;
+    /* type */
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
+    /* 4px spacing scale */
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
+    /* radii family (from reference) */
+    --r-sm: 7px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px; --r-pill: 9999px;
+    /* glass */
+    --glass-bg: rgba(0,0,0,.4);
+    --glass-line: rgba(255,255,255,.1);
+    --glass-shadow: 0 0 15px rgba(255,255,255,.05);
   }
+  html, body { height: 100%; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
-    background: var(--bg); color: var(--ink);
+    font-family: var(--sans); background: var(--bg); color: var(--ink);
     line-height: 1.45; -webkit-font-smoothing: antialiased; font-size: 14px;
+    overflow: hidden;
   }
+  ::selection { background: rgba(59,130,246,.3); color: #fff; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 4px; }
+
+  /* ═════════════ app frame ═════════════ */
+  .app { display: flex; height: 100vh; width: 100vw; }
+
+  /* ── atmosphere panel (left) ── */
+  .atmos {
+    position: relative; width: 34%; min-width: 380px; height: 100%;
+    border-right: 1px solid var(--glass-line); overflow: hidden;
+    background: #000; flex-shrink: 0;
+  }
+  .atmos .aura { position: absolute; inset: 0; background:
+    radial-gradient(ellipse 80% 60% at 30% 40%, rgba(59,130,246,.08), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 70% 70%, rgba(168,85,247,.05), transparent 60%); }
+  #network-globe { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; }
+  .atmos .vignette { position: absolute; inset: 0; z-index: 2; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,.85) 100%); }
+  .bracket { position: absolute; width: 10px; height: 10px; z-index: 5; }
+  .bracket.tl { top: 14px; left: 14px; border-top: 1px solid var(--ink-3); border-left: 1px solid var(--ink-3); }
+  .bracket.tr { top: 14px; right: 14px; border-top: 1px solid var(--ink-3); border-right: 1px solid var(--ink-3); }
+  .bracket.bl { bottom: 14px; left: 14px; border-bottom: 1px solid var(--ink-3); border-left: 1px solid var(--ink-3); }
+  .bracket.br { bottom: 14px; right: 14px; border-bottom: 1px solid var(--ink-3); border-right: 1px solid var(--ink-3); }
+  .rail { position: absolute; left: 0; right: 0; z-index: 4; padding: var(--s5); display: flex; justify-content: space-between; pointer-events: none; }
+  .rail.top { top: 0; align-items: flex-start; }
+  .rail.bottom { bottom: 0; align-items: flex-end; }
+  .rail-label { font-family: var(--mono); font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .12em; line-height: 1.6; }
+  .rail .clock { display: flex; align-items: center; gap: var(--s2); color: var(--ink-3); }
+  .chip {
+    position: absolute; z-index: 3; display: flex; align-items: center; gap: var(--s2);
+    background: var(--glass-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-line); box-shadow: var(--glass-shadow);
+    animation: chipIn 1.2s cubic-bezier(0,0,.2,1) backwards;
+  }
+  .chip.round { border-radius: var(--r-pill); padding: 5px 12px; }
+  .chip.card { border-radius: 14px; padding: 9px 12px; gap: 10px; }
+  .chip .k { font-family: var(--mono); font-size: 9px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .1em; }
+  .chip .v { font-size: 12px; font-weight: 500; color: #fff; letter-spacing: -.01em; }
+  .chip .t { font-family: var(--mono); font-size: 10px; color: #d4d4d8; }
+  .chip1 { top: 22%; left: 10%; animation-delay: .8s; }
+  .chip2 { top: 40%; right: 8%; animation-delay: 1s; }
+  .chip3 { bottom: 26%; left: 12%; animation-delay: 1.2s; }
+  @keyframes chipIn { from { opacity: 0; transform: scale(.9) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+  .dot-pulse { position: relative; display: flex; width: 8px; height: 8px; flex-shrink: 0; }
+  .dot-pulse .ping { position: absolute; inset: 0; border-radius: 50%; background: var(--blue); opacity: .75; animation: ping 1.4s cubic-bezier(0,0,.2,1) infinite; }
+  .dot-pulse .core { position: relative; border-radius: 50%; width: 8px; height: 8px; background: var(--blue-500); }
+  .dot-pulse.green .ping { background: var(--ok); }
+  .dot-pulse.green .core { background: var(--ok); }
+  .dot-pulse.idle .ping { display: none; }
+  .dot-pulse.idle .core { background: var(--ink-3); }
+  @keyframes ping { 75%, 100% { transform: scale(2.2); opacity: 0; } }
+  .brand-plate { position: absolute; bottom: 88px; left: 50%; transform: translateX(-50%); z-index: 4; text-align: center; }
+  .brand-plate .mark { width: 34px; height: 34px; margin: 0 auto var(--s2); border-radius: 9px;
+    background: linear-gradient(135deg, #e4e4e7, #71717a); display: flex; align-items: center; justify-content: center; color: #000; }
+  .brand-plate .name { font-size: 13px; font-weight: 500; color: #fff; letter-spacing: -.01em; }
+  .brand-plate .sub { font-family: var(--mono); font-size: 9px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .18em; margin-top: 3px; }
+
+  /* ── work zone (right) ── */
+  .workzone { flex: 1; height: 100%; position: relative; display: flex; flex-direction: column; background: var(--panel-2); min-width: 0; }
+  .dotgrid { position: absolute; inset: 0; pointer-events: none;
+    background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wMykiLz48L3N2Zz4=');
+    -webkit-mask-image: linear-gradient(to bottom, white 30%, transparent);
+    mask-image: linear-gradient(to bottom, white 30%, transparent); }
 
   /* ═════════════ header ═════════════ */
   header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 10px 20px; background: white; border-bottom: 1px solid var(--line-ui);
+    position: relative; z-index: 5;
+    display: flex; justify-content: space-between; align-items: center; gap: var(--s4);
+    padding: 0 28px; height: 58px; flex-shrink: 0;
+    background: rgba(9,9,11,.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line-ui);
   }
-  .logo { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; }
-  .logo-dot { width: 7px; height: 7px; background: var(--accent-ui); border-radius: 50%; }
-  .header-meta { display: flex; gap: 16px; font-size: 11px; color: var(--ink-2); align-items: center; }
-  .header-meta b { color: var(--ink); font-weight: 500; font-family: "SF Mono", Menlo, monospace; font-size: 10px; }
-  .header-meta .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
-  .header-meta .dot.on { background: var(--ok); }
-  .header-meta .dot.err { background: var(--err); }
-  .header-meta .dot.warn { background: var(--warn); }
-  .header-meta .btn {
-    background: var(--ink); color: white; border: 1px solid var(--ink);
-    padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer;
-    font-family: inherit; letter-spacing: 0.04em;
-  }
-  .header-meta .btn.ghost { background: transparent; color: var(--ink); }
+  .logo { font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 10px; color: #fff; letter-spacing: -.01em; }
+  .logo .logo-mark { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, #e4e4e7, #71717a);
+    display: flex; align-items: center; justify-content: center; color: #000; }
+  .logo .fn { font-family: var(--mono); font-size: 9px; color: var(--ink-3); background: #18181b; border: 1px solid var(--line-soft);
+    padding: 2px 7px; border-radius: var(--r-sm); text-transform: uppercase; letter-spacing: .1em; }
+  .header-meta { display: flex; gap: var(--s3); font-size: 11px; color: var(--ink-2); align-items: center; }
+  .header-meta .net-chip { display: flex; align-items: center; gap: 7px; background: #18181b; border: 1px solid var(--glass-line);
+    border-radius: var(--r-md); padding: 6px 10px; font-family: var(--mono); font-size: 10px; color: var(--ink-2); }
+  .header-meta .net-chip b { color: var(--ink); font-weight: 500; }
+  .header-meta .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .header-meta .dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(52,211,153,.8); }
+  .header-meta .dot.err { background: var(--err); box-shadow: 0 0 8px rgba(248,113,113,.6); }
+  .header-meta .dot.warn { background: var(--warn); box-shadow: 0 0 8px rgba(251,191,36,.6); }
+  #walletLabel { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
 
-  /* ═════════════ STATE A: stacked layout (register above, live verify below) ═════════════ */
-  .split { display: grid; grid-template-columns: 1fr; grid-auto-rows: min-content; min-height: calc(100vh - 51px); }
-  .split.hidden { display: none; }
-  .left {
-    background: white;
-    padding: 20px 24px;
-    overflow-y: auto;
-    transition: opacity 0.4s ease, transform 0.4s ease;
-  }
-  .right {
-    padding: 20px 24px; background: var(--bg);
-    border-top: 1px solid var(--line-ui);
-    overflow-y: auto;
-    transition: opacity 0.4s ease, transform 0.4s ease;
-  }
-  .split.fading .left, .split.fading .right { opacity: 0; transform: translateY(8px); }
-
-  .step-h { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px; }
-  .left h1, .right h1 { font-size: 20px; font-weight: 600; margin-bottom: 3px; letter-spacing: -0.01em; }
-  .left .sub, .right .sub { color: var(--ink-2); margin-bottom: 20px; font-size: 13px; }
-
-  .field { margin-bottom: 12px; }
-  .field label { display: block; font-size: 11px; color: var(--ink-2); margin-bottom: 3px; font-weight: 500; }
-  .field input, .field select {
-    width: 100%; padding: 8px 10px; border: 1px solid var(--line-ui);
-    border-radius: 6px; font-family: inherit; font-size: 13px;
-    background: white; color: var(--ink); transition: border-color 0.15s;
-  }
-  .field input:focus, .field select:focus { border-color: var(--accent-ui); outline: 2px solid var(--accent-ui-soft); }
-  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .section-divider { height: 1px; background: var(--line-ui); margin: 18px 0; }
-  .section-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-  .section-label h2 { font-size: 13px; font-weight: 600; }
-  .section-label .hint { font-size: 11px; color: var(--ink-3); }
-
-  .src-pick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-  .src-pick button {
-    background: var(--paper); border: 1px solid var(--rule); color: var(--ink-2);
-    font-size: 11px; padding: 5px 10px; border-radius: 14px; cursor: pointer;
-    font-family: inherit; transition: all 0.12s;
-  }
-  .src-pick button.on { background: var(--ink); border-color: var(--ink); color: white; }
-  .src-pick button.on::before { content: "✓ "; }
-  .src-row { display: grid; grid-template-columns: 110px 1fr 28px; gap: 6px; margin-bottom: 6px; align-items: center; }
-  .src-row select, .src-row input { padding: 6px 8px; font-size: 12px; }
-  .src-row .rm { background: transparent; border: 1px solid var(--rule); color: var(--ink-3); padding: 4px; border-radius: 4px; cursor: pointer; font-family: inherit; }
-  .src-row .rm:hover { color: var(--err); border-color: var(--err); }
-
+  /* ═════════════ buttons ═════════════ */
   .btn {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 14px; border: 1px solid var(--ink);
-    background: var(--ink); color: white;
-    border-radius: 6px; font-family: inherit; font-size: 12px;
-    font-weight: 500; cursor: pointer; transition: all 0.15s;
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
+    padding: 10px 18px; border: none; border-radius: var(--r-md);
+    background: #f4f4f5; color: #000;
+    font-family: var(--sans); font-size: 12px; font-weight: 500;
+    cursor: pointer; transition: background .2s, transform .15s;
   }
-  .btn.ghost { background: transparent; color: var(--ink); }
-  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
-  .btn:hover { opacity: 0.9; }
+  .btn:hover { background: #fff; }
+  .btn:active { transform: scale(.98); }
+  .btn.ghost {
+    background: #18181b; color: var(--ink); border: 1px solid var(--line-soft);
+  }
+  .btn.ghost:hover { border-color: #52525b; background: #27272a; }
+  .btn[disabled] { opacity: .5; cursor: not-allowed; }
+  .btn.link { background: transparent; color: var(--ink-3); border: 1px solid var(--line-ui); }
+  .btn.link:hover { color: var(--ink); border-color: var(--line-soft); }
+  .btn.warn { background: transparent; color: var(--err); border: 1px solid var(--line-soft); }
 
-  .checkboxes { display: flex; gap: 14px; margin-top: 10px; font-size: 12px; align-items: center; }
-  .checkboxes label { display: flex; gap: 6px; align-items: center; margin: 0; color: var(--ink); cursor: pointer; }
-  .checkboxes input { width: auto; }
+  /* ═════════════ STATE A: register + verify ═════════════ */
+  .scroll-area { position: relative; z-index: 4; flex: 1; overflow-y: auto; padding: var(--s6) var(--s6) 120px; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1160px; margin: 0 auto; align-items: start; }
+  .split.hidden { display: none; }
+  .split.fading .left, .split.fading .right { opacity: 0; transform: translateY(8px); }
+  .left, .right {
+    background: var(--panel); border: 1px solid var(--line-ui); border-radius: var(--r-xl);
+    padding: var(--s5) var(--s5) var(--s6); overflow: visible;
+    transition: opacity .4s ease, transform .4s ease;
+  }
+  .step-h { font-family: var(--mono); font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3); margin-bottom: var(--s2); }
+  .left h1, .right h1 { font-size: 19px; font-weight: 500; margin-bottom: var(--s1); letter-spacing: -.02em; color: #fff; }
+  .left .sub, .right .sub { color: var(--ink-3); margin-bottom: var(--s5); font-size: 12px; font-weight: 300; letter-spacing: .02em; }
 
-  .verify-status { margin-bottom: 14px; font-size: 12px; color: var(--ink-2); line-height: 1.6; }
-  .verify-status b { color: var(--ink); }
+  .field { margin-bottom: var(--s3); }
+  .field label { display: block; font-size: 11px; color: var(--ink-3); margin-bottom: 6px; font-weight: 400; letter-spacing: .02em; }
+  .field input, .field select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line-soft);
+    border-radius: var(--r-md); font-family: var(--sans); font-size: 13px; font-weight: 300;
+    background: #050505; color: #fff; transition: border-color .2s, box-shadow .2s;
+  }
+  .field input:focus, .field select:focus { border-color: rgba(96,165,250,.5); outline: none; box-shadow: 0 0 14px rgba(59,130,246,.15); }
+  .field input::placeholder { color: #3f3f46; }
+
+  .section-divider { height: 1px; background: var(--line-ui); margin: var(--s5) 0; }
+  .section-label { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); margin-bottom: var(--s3); }
+  .section-label h2 { font-size: 13px; font-weight: 500; color: var(--ink); letter-spacing: -.01em; }
+  .section-label .hint { font-size: 10px; color: var(--ink-3); font-family: var(--mono); }
+
+  .src-pick { display: flex; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s2); }
+  .src-pick button {
+    background: #18181b; border: 1px solid var(--line-soft); color: var(--ink-2);
+    font-size: 11px; padding: 7px 12px; border-radius: var(--r-md); cursor: pointer;
+    font-family: var(--sans); transition: all .2s;
+  }
+  .src-pick button:hover { border-color: #52525b; color: var(--ink); }
+  .src-pick button.on {
+    background: rgba(59,130,246,.08); border-color: rgba(96,165,250,.5); color: #fff;
+    box-shadow: 0 0 12px rgba(59,130,246,.15);
+  }
+  .src-pick button.on::before { content: "✓ "; color: var(--blue); }
+  .src-row { display: grid; grid-template-columns: 118px 1fr 30px; gap: var(--s2); margin-bottom: var(--s2); align-items: center; }
+  .src-row select, .src-row input {
+    padding: 8px 10px; font-size: 12px; background: #050505; color: var(--ink);
+    border: 1px solid var(--line-soft); border-radius: var(--r-sm); font-family: var(--mono);
+    outline: none; transition: border-color .2s; width: 100%;
+  }
+  .src-row select:focus, .src-row input:focus { border-color: rgba(96,165,250,.5); }
+  .src-row .rm { background: #18181b; border: 1px solid var(--line-soft); color: var(--ink-3); padding: 6px; border-radius: var(--r-sm); cursor: pointer; font-family: inherit; transition: all .2s; }
+  .src-row .rm:hover { color: var(--err); border-color: rgba(248,113,113,.5); }
+
+  .checkboxes { display: flex; gap: var(--s4); margin-top: var(--s4); font-size: 12px; align-items: center; flex-wrap: wrap; }
+  .checkboxes label { display: flex; gap: var(--s2); align-items: center; margin: 0; color: var(--ink-2); cursor: pointer; font-size: 12px; }
+  .checkboxes input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--blue-500); cursor: pointer; }
+  .checkboxes select {
+    margin-left: 6px; padding: 7px 10px; border: 1px solid var(--line-soft); border-radius: var(--r-md);
+    background: #18181b; color: var(--ink); font-family: var(--mono); font-size: 11px; outline: none; cursor: pointer;
+  }
+  .actions { margin-top: var(--s5); }
+  #submitBtn { width: 100%; padding: 12px 18px; font-size: 13px; }
+
+  /* verify pane */
+  .verify-status { margin-bottom: var(--s4); font-size: 12px; color: var(--ink-2); line-height: 1.7; font-weight: 300; }
+  .verify-status b { color: #fff; font-weight: 500; }
   .verify-status .err { color: var(--err); }
-  .log-line { font-size: 11px; font-family: "SF Mono", Menlo, monospace; color: var(--ink-2); }
-
-  .run-card { background: white; border: 1px solid var(--line-ui); border-radius: 8px; padding: 14px 18px; margin-bottom: 12px; }
-  .run-card .h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-  .run-card h3 { font-size: 13px; font-weight: 600; }
-  .pulse { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; color: var(--ink-2); }
-  .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: pulse 1.6s infinite; }
-  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
+  .verify-status a { color: var(--blue); }
 
   .score-banner {
-    background: linear-gradient(135deg, var(--ink) 0%, #1a1d28 100%);
-    color: white; padding: 16px 20px; border-radius: 8px;
-    margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;
+    background: linear-gradient(135deg, #101014 0%, #0a0a0f 100%);
+    border: 1px solid var(--line-ui); border-radius: var(--r-lg);
+    color: white; padding: var(--s4) var(--s5);
+    margin-bottom: var(--s4); display: flex; justify-content: space-between; align-items: center; gap: var(--s4);
   }
-  .score-banner .label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.6; }
-  .score-banner .big { font-size: 34px; font-weight: 600; line-height: 1; margin-top: 4px; font-family: "SF Mono", Menlo, monospace; }
-  .score-banner .big .denom { font-size: 16px; opacity: 0.5; }
+  .score-banner .label { font-family: var(--mono); font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3); }
+  .score-banner .big { font-size: 34px; font-weight: 500; line-height: 1.1; margin-top: 6px; font-family: var(--mono); letter-spacing: -.02em; }
+  .score-banner .big .denom { font-size: 15px; color: var(--ink-3); }
   .score-banner .verdict { text-align: right; }
   .score-banner .verdict .badge {
-    display: inline-block; padding: 3px 10px; border-radius: 4px;
-    font-size: 11px; font-weight: 600; letter-spacing: 0.06em; background: var(--ink-3); color: var(--ink);
+    display: inline-block; padding: 4px 12px; border-radius: var(--r-pill);
+    font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: .1em;
+    background: #18181b; color: var(--ink-3); border: 1px solid var(--line-soft);
   }
-  .score-banner .verdict .badge.ok { background: var(--ok); color: white; }
-  .score-banner .verdict .badge.warn { background: var(--warn); color: white; }
+  .score-banner .verdict .badge.ok { background: rgba(52,211,153,.08); color: var(--ok); border-color: rgba(52,211,153,.3); box-shadow: 0 0 12px rgba(52,211,153,.15); }
+  .score-banner .verdict .badge.warn { background: rgba(251,191,36,.06); color: var(--warn); border-color: rgba(251,191,36,.25); }
 
-  /* ═════════════ STATE B: certificate (editorial) ═════════════ */
+  .run-card { background: #050505; border: 1px solid var(--line-ui); border-radius: var(--r-lg); padding: var(--s4) var(--s4); margin-bottom: var(--s3); }
+  .run-card .h { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--s3); }
+  .run-card h3 { font-family: var(--mono); font-size: 9px; font-weight: 400; text-transform: uppercase; letter-spacing: .14em; color: var(--ink-3); }
+  .pulse { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 9px; color: var(--ok); text-transform: uppercase; letter-spacing: .1em; }
+  .pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px rgba(52,211,153,.8); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.8); } }
+  .log-line {
+    font-size: 11px; font-family: var(--mono); color: var(--ink-2); line-height: 1.9;
+    max-height: 260px; overflow-y: auto; position: relative;
+  }
+
+  /* ═════════════ STATE B: certificate ═════════════ */
   .cert {
-    max-width: 640px; margin: 0 auto; padding: 40px 32px 56px;
-    display: none;
-    animation: fadeIn 0.6s ease 0.2s both;
+    max-width: 680px; margin: 0 auto; padding: var(--s4) 0 var(--s7);
+    display: none; animation: fadeIn .6s ease .1s both;
   }
   .cert.active { display: block; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-  .cert .crest {
-    text-align: center; font-size: 10px; letter-spacing: 0.28em;
-    text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
-  }
-  .cert h1 {
-    font-family: "Iowan Old Style", "Apple Garamond", Garamond, "Times New Roman", serif;
-    font-size: 30px; font-weight: 400; line-height: 1.15; text-align: center;
-    margin-bottom: 6px; letter-spacing: -0.01em;
-  }
-  .cert .subtitle { text-align: center; font-style: italic; color: var(--muted); margin-bottom: 28px; font-size: 13px; }
+  .cert-inner { background: var(--panel); border: 1px solid var(--line-ui); border-radius: var(--r-xl); padding: var(--s7) var(--s7) var(--s6); }
+  .cert .crest { text-align: center; font-family: var(--mono); font-size: 9px; letter-spacing: .28em; text-transform: uppercase; color: var(--ink-3); margin-bottom: var(--s4); }
+  .cert h1 { font-size: 28px; font-weight: 500; line-height: 1.15; text-align: center; margin-bottom: 6px; letter-spacing: -.02em; color: #fff; }
+  .cert .subtitle { text-align: center; color: var(--ink-3); margin-bottom: var(--s6); font-size: 12px; font-weight: 300; letter-spacing: .02em; }
   .cert .seal {
-    width: 56px; height: 56px; border: 1.5px solid var(--ink); border-radius: 50%;
-    margin: 0 auto 24px; display: flex; align-items: center; justify-content: center;
-    font-size: 9px; letter-spacing: 0.2em; color: var(--muted);
+    width: 64px; height: 64px; border: 1px solid var(--line-soft); border-radius: var(--r-lg);
+    margin: 0 auto var(--s6); display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 12px; letter-spacing: .12em; color: var(--ink-3);
   }
-  .cert .seal.ok { border-color: var(--ok); color: var(--ok); }
-  .cert .field { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--rule-soft); font-size: 12px; }
-  .cert .field-label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; }
-  .cert .field-value { font-family: "SF Mono", Menlo, monospace; color: var(--ink); }
-  .cert .field-value.mono { font-family: "SF Mono", Menlo, monospace; font-size: 11px; }
-  .cert .rule { border: none; border-top: 1px solid var(--rule); margin: 20px 0; }
+  .cert .seal.ok { border-color: rgba(52,211,153,.4); color: var(--ok); background: rgba(52,211,153,.06); box-shadow: 0 0 24px rgba(52,211,153,.12); }
+  .cert .field { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s4); padding: 10px 0; border-bottom: 1px solid var(--line-ui); font-size: 12px; }
+  .cert .field-label { color: var(--ink-3); text-transform: uppercase; letter-spacing: .1em; font-size: 9px; font-family: var(--mono); }
+  .cert .field-value { font-family: var(--mono); color: var(--ink); font-size: 12px; text-align: right; word-break: break-all; }
+  .cert .rule { border: none; border-top: 1px solid var(--line-ui); margin: var(--s5) 0; }
+  .cert .section-label { margin-bottom: var(--s2); }
+  .cert .section-label span:first-child { font-size: 13px; font-weight: 500; color: var(--ink); }
 
-  details summary { cursor: pointer; padding: 8px 0; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid var(--rule-soft); font-size: 12px; }
-  details summary .label { color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; min-width: 80px; }
-  details summary .handle { font-family: "SF Mono", Menlo, monospace; flex: 1; color: var(--ink); font-size: 11px; }
-  details summary .verdict { font-size: 11px; padding: 1px 6px; border-radius: 3px; }
-  details summary .verdict.ok { color: var(--ok); }
-  details summary .verdict.warn { color: var(--warn); }
-  details summary .verdict.err { color: var(--err); }
-  details summary .caret { color: var(--ink-3); transition: transform 0.15s; }
+  details { margin-bottom: var(--s2); border: 1px solid var(--line-ui); border-radius: var(--r-md); background: var(--panel-2); overflow: hidden; }
+  details summary { cursor: pointer; padding: 12px 14px; display: flex; gap: var(--s3); align-items: center; font-size: 12px; list-style: none; transition: background .15s; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary:hover { background: rgba(24,24,27,.5); }
+  details summary .label { color: var(--ink-3); text-transform: uppercase; letter-spacing: .1em; font-size: 9px; font-family: var(--mono); min-width: 82px; flex-shrink: 0; }
+  details summary .handle { font-family: var(--mono); flex: 1; color: var(--ink); font-size: 11px; word-break: break-all; }
+  details summary .verdict { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; padding: 3px 9px; border-radius: var(--r-pill); background: #18181b; color: var(--ink-3); border: 1px solid var(--line-soft); flex-shrink: 0; }
+  details summary .verdict.ok { color: var(--ok); border-color: rgba(52,211,153,.3); background: rgba(52,211,153,.06); }
+  details summary .verdict.warn { color: var(--warn); border-color: rgba(251,191,36,.25); background: rgba(251,191,36,.05); }
+  details summary .verdict.err { color: var(--err); border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.05); }
+  details summary .caret { color: var(--ink-3); transition: transform .15s; font-size: 9px; flex-shrink: 0; }
   details[open] summary .caret { transform: rotate(90deg); }
   details .raw {
-    padding: 10px; font-family: "SF Mono", Menlo, monospace; font-size: 11px;
-    color: var(--ink-2); background: var(--code-bg); border-left: 2px solid var(--accent);
-    margin: 6px 0 12px 90px; white-space: pre-wrap; word-break: break-word;
-    line-height: 1.55;
+    padding: var(--s3) 14px; font-family: var(--mono); font-size: 11px;
+    color: var(--ink-2); background: #050505; border-top: 1px solid var(--line-ui);
+    white-space: pre-wrap; word-break: break-word; line-height: 1.6; margin: 0;
   }
 
-  .cert .score { text-align: center; margin: 28px 0 18px; }
-  .cert .score-num { font-size: 48px; line-height: 1; font-weight: 400; font-family: "SF Mono", Menlo, monospace; }
-  .cert .score-num .denom { color: var(--muted); font-size: 22px; }
-  .cert .score-label { font-size: 9px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+  .cert .score { text-align: center; margin: var(--s6) 0 var(--s4); }
+  .cert .score-num { font-size: 46px; line-height: 1; font-weight: 500; font-family: var(--mono); color: #fff; letter-spacing: -.03em; }
+  .cert .score-num .denom { color: var(--ink-3); font-size: 20px; }
+  .cert .score-label { font-family: var(--mono); font-size: 9px; letter-spacing: .26em; text-transform: uppercase; color: var(--ink-3); margin-top: var(--s2); }
 
   .cert .breakdown {
-    display: grid; grid-template-columns: 1fr 60px;
-    gap: 4px 20px; font-size: 12px; margin: 14px 0;
+    display: grid; grid-template-columns: 1fr auto;
+    gap: 6px var(--s5); font-size: 12px; margin: var(--s4) 0;
+    border: 1px solid var(--line-ui); border-radius: var(--r-md); padding: var(--s3) 14px; background: var(--panel-2);
   }
-  .cert .breakdown .lbl { color: var(--muted); }
-  .cert .breakdown .val { text-align: right; color: var(--ink); font-family: "SF Mono", Menlo, monospace; }
+  .cert .breakdown .lbl { color: var(--ink-2); font-weight: 300; }
+  .cert .breakdown .val { text-align: right; color: var(--ink); font-family: var(--mono); font-size: 11px; }
   .cert .breakdown .val.add { color: var(--ok); }
   .cert .breakdown .val.neg { color: var(--err); }
-  .cert .breakdown .total { color: var(--ink); font-weight: 600; }
+  .cert .breakdown .total { color: #fff; font-weight: 500; }
 
-  .cert .actions {
-    display: flex; flex-wrap: wrap; gap: 8px;
-    justify-content: center; align-items: center; margin-top: 24px;
-  }
-  .cert .actions .btn { padding: 8px 16px; font-size: 11px; letter-spacing: 0.06em; background: var(--ink); color: var(--paper); border-radius: 0; }
-  .cert .actions .btn.ghost { background: transparent; color: var(--ink); }
-  .cert .actions .btn.link { background: transparent; color: var(--muted); border-color: var(--rule); }
-  .cert .actions .btn.warn { background: transparent; color: var(--err); border-color: var(--rule); }
-  .cert-sep { width: 1px; height: 20px; background: var(--rule); margin: 0 2px; }
-  .cert .hint { text-align: center; font-size: 10px; color: var(--muted); font-style: italic; margin-top: 6px; }
+  .cert .actions { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: center; align-items: center; margin-top: var(--s6); }
+  .cert .actions .btn { padding: 10px 16px; font-size: 11px; letter-spacing: .04em; }
+  .cert-sep { width: 1px; height: 20px; background: var(--line-soft); margin: 0 var(--s1); }
+  .cert .hint { text-align: center; font-size: 10px; color: var(--ink-3); margin-top: var(--s3); font-weight: 300; }
 
   /* ═════════════ STATE C: modal (inspect) ═════════════ */
   .modal-backdrop {
-    position: fixed; inset: 0; background: rgba(26, 24, 20, 0.65);
-    backdrop-filter: blur(2px);
+    position: fixed; inset: 0; background: rgba(0,0,0,.72);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
     display: none; align-items: flex-start; justify-content: center;
-    padding: 24px 12px; overflow-y: auto; z-index: 100;
+    padding: var(--s6) var(--s4); overflow-y: auto; z-index: 100;
   }
   .modal-backdrop.open { display: flex; }
   .modal {
-    background: var(--paper); width: 100%; max-width: 820px;
-    border: 1px solid var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+    background: var(--panel); width: 100%; max-width: 840px;
+    border: 1px solid var(--line-soft); border-radius: var(--r-xl); overflow: hidden;
+    box-shadow: 0 24px 64px rgba(0,0,0,.6);
   }
   .modal-head {
-    padding: 12px 20px; border-bottom: 1px solid var(--rule);
-    display: flex; justify-content: space-between; align-items: center;
+    padding: var(--s4) var(--s5); border-bottom: 1px solid var(--line-ui);
+    display: flex; justify-content: space-between; align-items: center; gap: var(--s4);
   }
-  .modal-head h2 { font-size: 14px; font-weight: 400; letter-spacing: 0.02em; }
-  .modal-head h2 em { color: var(--muted); font-style: normal; font-size: 11px; letter-spacing: 0.1em; margin-left: 8px; }
+  .modal-head h2 { font-size: 14px; font-weight: 500; letter-spacing: -.01em; color: #fff; }
+  .modal-head h2 em { color: var(--ink-3); font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; margin-left: var(--s2); }
   .modal-close {
-    background: none; border: 1px solid var(--rule); color: var(--muted);
-    font-family: inherit; font-size: 10px; letter-spacing: 0.1em;
-    padding: 3px 10px; cursor: pointer;
+    background: #18181b; border: 1px solid var(--line-soft); color: var(--ink-2);
+    font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase;
+    padding: 6px 12px; border-radius: var(--r-sm); cursor: pointer; transition: all .2s; flex-shrink: 0;
   }
-  .modal-close:hover { color: var(--ink); border-color: var(--ink); }
-  .modal-tabs { display: flex; border-bottom: 1px solid var(--rule); background: var(--code-bg); }
+  .modal-close:hover { color: #fff; border-color: #52525b; }
+  .modal-tabs { display: flex; border-bottom: 1px solid var(--line-ui); background: var(--panel-2); overflow-x: auto; }
   .modal-tab {
-    padding: 8px 14px; font-size: 10px; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--muted);
-    border-right: 1px solid var(--rule); cursor: pointer;
-    background: transparent; border-top: none; border-bottom: none; border-left: none;
-    font-family: inherit;
+    padding: 10px var(--s4); font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-3);
+    border: none; border-right: 1px solid var(--line-ui); cursor: pointer;
+    background: transparent; transition: color .2s, background .2s; white-space: nowrap;
   }
-  .modal-tab.active { color: var(--ink); background: var(--paper); border-top: 2px solid var(--accent); padding-top: 6px; }
-  .modal-body { padding: 16px 20px 20px; max-height: 60vh; overflow-y: auto; }
+  .modal-tab:hover { color: var(--ink); }
+  .modal-tab.active { color: #fff; background: var(--panel); box-shadow: inset 0 2px 0 var(--blue-500); }
+  .modal-body { padding: var(--s5); max-height: 62vh; overflow-y: auto; }
   .modal-panel { display: none; }
   .modal-panel.active { display: block; }
   pre.json {
-    font-family: "SF Mono", Menlo, Consolas, monospace;
-    font-size: 11px; line-height: 1.55;
+    font-family: var(--mono); font-size: 11px; line-height: 1.6;
     white-space: pre-wrap; word-break: break-word;
-    background: var(--code-bg); padding: 12px 14px; border-left: 2px solid var(--accent);
+    background: #050505; padding: var(--s4); border: 1px solid var(--line-ui);
+    border-left: 2px solid var(--blue-500); border-radius: var(--r-md); color: var(--ink-2);
   }
 
-  /* ═════════════ flow controller (bottom bar) ═════════════ */
+  /* ═════════════ flow controller ═════════════ */
   .flow-bar {
-    position: fixed; bottom: 12px; right: 12px;
-    background: var(--ink); color: white;
-    padding: 6px 10px; border-radius: 6px; font-size: 11px;
+    position: fixed; bottom: var(--s3); right: var(--s3);
+    background: rgba(9,9,11,.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    color: white; border: 1px solid var(--glass-line);
+    padding: 6px 10px; border-radius: var(--r-lg); font-size: 11px;
     display: flex; gap: 6px; align-items: center;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 1000;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5); z-index: 1000;
   }
-  .flow-bar .step-label { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.6; }
+  .flow-bar .step-label { font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
   .flow-bar button {
-    background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3);
-    padding: 3px 8px; border-radius: 3px; font-family: inherit; font-size: 10px;
-    cursor: pointer; letter-spacing: 0.05em;
+    background: #18181b; color: var(--ink-2); border: 1px solid var(--line-soft);
+    padding: 5px 10px; border-radius: var(--r-sm); font-family: var(--sans); font-size: 10px;
+    cursor: pointer; letter-spacing: .03em; transition: all .2s;
   }
-  .flow-bar button:hover { background: rgba(255,255,255,0.25); }
-  .flow-bar button.active { background: var(--ok); border-color: var(--ok); color: white; }
-  .flow-bar button:disabled { opacity: 0.3; cursor: not-allowed; }
-  .flow-bar .arrow { color: rgba(255,255,255,0.4); margin: 0 -2px; }
+  .flow-bar button:hover { border-color: #52525b; color: #fff; }
+  .flow-bar button.active { background: rgba(52,211,153,.1); border-color: rgba(52,211,153,.4); color: var(--ok); }
+  .flow-bar button:disabled { opacity: .35; cursor: not-allowed; }
+  .flow-bar .arrow { color: var(--ink-3); margin: 0 -2px; font-size: 10px; }
+
+  /* ═════════════ responsive ═════════════ */
+  @media (max-width: 1280px) {
+    .atmos { min-width: 320px; }
+    .scroll-area { padding: var(--s5) var(--s5) 110px; }
+  }
+  @media (max-width: 1100px) {
+    body { overflow: auto; }
+    .app { flex-direction: column; height: auto; min-height: 100vh; }
+    .atmos { width: 100%; min-width: 0; height: 240px; border-right: none; border-bottom: 1px solid var(--glass-line); }
+    .brand-plate { display: none; }
+    .chip2 { display: none; }
+    .rail { padding: var(--s4); }
+    .workzone { height: auto; }
+    .scroll-area { overflow: visible; padding: var(--s5) var(--s4) 110px; }
+    .split { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    header { padding: 0 var(--s4); height: auto; min-height: 56px; flex-wrap: wrap; padding-top: var(--s2); padding-bottom: var(--s2); row-gap: var(--s2); }
+    .header-meta { flex-wrap: wrap; gap: var(--s2); }
+    .header-meta .net-chip.contract-chip { display: none; }
+    .scroll-area { padding: var(--s4) var(--s3) 100px; }
+    .left, .right { padding: var(--s4) var(--s4) var(--s5); }
+    .cert-inner { padding: var(--s6) var(--s5) var(--s5); }
+    .cert h1 { font-size: 23px; }
+    .score-banner { flex-direction: column; align-items: flex-start; }
+    .score-banner .verdict { text-align: left; }
+    .src-row { grid-template-columns: 100px 1fr 30px; }
+    .flow-bar { left: var(--s3); right: var(--s3); justify-content: center; flex-wrap: wrap; }
+  }
 </style>
 </head>
 <body>
 
-<header>
-  <div class="logo"><div class="logo-dot"></div>ArtistLedger · register_artist</div>
-  <div class="header-meta">
-    <span><span class="dot" id="rpcDot"></span><b id="rpcStatus">connecting…</b></span>
-    <span>contract <b>0x703AdAB…4384</b> (v0.3.4)</span>
-    <button class="btn ghost" id="localAcctBtn">Connect</button>
-    <span style="font-size:10px;color:var(--ink-2);opacity:0.6">local signer</span>
-    <span id="walletLabel" style="font-family:'SF Mono',Menlo,monospace;font-size:10px;color:var(--ink-2)"></span>
-  </div>
-</header>
+<div class="app">
 
-<!-- ══════════════ STATE A: split-pane (register + live verify) ══════════════ -->
-<div class="split" id="split">
+  <!-- ══════════════ ATMOSPHERE (left) ══════════════ -->
+  <div class="atmos">
+    <div class="aura"></div>
+    <canvas id="network-globe"></canvas>
+    <div class="vignette"></div>
+    <div class="bracket tl"></div><div class="bracket tr"></div><div class="bracket bl"></div><div class="bracket br"></div>
 
-<div class="left">
-  <div class="step-h">step 1 of 3 — register</div>
-  <h1>Register an artist</h1>
-  <p class="sub">Two independent source verifications required for a Verified stamp.</p>
-
-  <div class="field">
-    <label>Artist name (the one your fans know)</label>
-    <input id="f-name" placeholder="e.g. Caribou" value="Caribou">
-  </div>
-
-  <div class="section-divider"></div>
-
-  <div class="section-label">
-    <h2>Two-source verification</h2>
-    <span class="hint">tap two that prove it's you</span>
-  </div>
-
-  <div class="src-pick" id="srcPick">
-    <button data-src="apple_music" data-handle="45464574">Apple Music</button>
-    <button data-src="musicbrainz" data-handle="syndicate-mb">MusicBrainz</button>
-    <button data-src="bandcamp" data-handle="">Bandcamp</button>
-    <button data-src="soundcloud" data-handle="">SoundCloud</button>
-    <button data-src="instagram" data-handle="">Instagram</button>
-    <button data-src="lastfm" data-handle="">Last.fm</button>
-    <button data-src="website" data-handle="">Website</button>
-    <button data-src="tiktok" data-handle="">TikTok</button>
-  </div>
-  <div id="srcRows" style="margin-top:10px"></div>
-
-  <div class="checkboxes" style="margin-top:14px">
-    <label><input type="checkbox" id="fStrict" checked> Strict mode (require both sources)</label>
-    <label style="margin-left:auto">
-      Try an artist:
-      <select id="fDemo" style="margin-left:6px;padding:4px 6px;border:1px solid var(--line-ui);border-radius:4px;font-family:inherit;font-size:11px">
-        <option value="">— pick one —</option>
-        <option>Four Tet</option>
-        <option>Caribou</option>
-        <option>Skrillex</option>
-        <option>deadmau5</option>
-        <option>Daft Punk</option>
-        <option>Aphex Twin</option>
-        <option>Burial</option>
-        <option>Floating Points</option>
-        <option>Boards of Canada</option>
-        <option>Fred again..</option>
-        <option>Jamie xx</option>
-        <option>Mindex</option>
-      </select>
-    </label>
-  </div>
-
-  <div class="actions" style="margin-top:18px">
-    <button class="btn" id="submitBtn">Sign &amp; submit proof →</button>
-  </div>
-</div>
-
-<div class="right">
-  <div class="step-h">step 2 of 3 — verification</div>
-  <h1 id="verify-title">Cross-referencing sources</h1>
-  <p class="sub" id="verify-sub">Live API checks via the leader. Validators independently re-derive the score.</p>
-
-  <div class="verify-status" id="verify-status">Pick an artist + two sources on the left (or use "Try an artist" →), then submit. The leader runs 7+ free public APIs, builds the evidence, and 4 validators vote. ~1-2 min. Threshold to flip to Verified is 70/100; AcoustID audio fingerprint (+20) is the single biggest unlock.</div>
-
-  <div class="score-banner">
-    <div>
-      <div class="label">verification score</div>
-      <div class="big"><span id="live-score">—</span><span class="denom">/100</span></div>
+    <div class="rail top">
+      <div>
+        <div class="rail-label">ArtistLedger System</div>
+        <div class="rail-label" style="opacity:.6">SYS.VAL.ENV_STUDIONET</div>
+      </div>
+      <div class="clock">
+        <iconify-icon icon="solar:radar-linear" width="16"></iconify-icon>
+        <span class="rail-label" id="clock">00:00:00 UTC</span>
+      </div>
     </div>
-    <div class="verdict">
-      <div class="label">consensus</div>
-      <div style="margin-top:6px"><span class="badge" id="live-badge">—</span></div>
+
+    <div class="chip round chip1">
+      <span class="dot-pulse" id="chipValDot"><span class="ping"></span><span class="core"></span></span>
+      <span class="t" id="chipVal">VAL.CMT_4/4_ACTIVE</span>
+    </div>
+    <div class="chip card chip2">
+      <div style="width:26px;height:26px;border-radius:8px;background:#18181b;border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center">
+        <iconify-icon icon="solar:verified-check-linear" width="14" style="color:#60a5fa"></iconify-icon>
+      </div>
+      <div>
+        <div class="k">Threshold</div>
+        <div class="v">70 / 100 strict</div>
+      </div>
+    </div>
+    <div class="chip round chip3" id="chipConsensusWrap">
+      <span class="dot-pulse idle" id="chipConsensusDot"><span class="ping"></span><span class="core"></span></span>
+      <span class="t" id="chipConsensus">AWAITING_SUBMISSION</span>
+    </div>
+
+    <div class="brand-plate">
+      <div class="mark"><iconify-icon icon="solar:music-note-2-linear" width="17"></iconify-icon></div>
+      <div class="name">ArtistLedger</div>
+      <div class="sub">Onchain Attribution</div>
+    </div>
+
+    <div class="rail bottom">
+      <span class="rail-label" style="opacity:.6">CONTRACT: 0x703AdAB…4384<br>CHAIN_ID: 61999 · V0.3.4</span>
+      <div style="height:1px;width:96px;background:linear-gradient(90deg,transparent,#52525b,transparent)"></div>
     </div>
   </div>
 
-  <div id="live-logs" class="run-card" style="display:none">
-    <div class="h"><h3>Live verification log</h3><span class="pulse"><span class="pulse-dot"></span>live</span></div>
-    <div class="log-line" id="loglines"></div>
+  <!-- ══════════════ WORK ZONE (right) ══════════════ -->
+  <div class="workzone">
+    <div class="dotgrid"></div>
+
+    <header>
+      <div class="logo">
+        <div class="logo-mark"><iconify-icon icon="solar:music-note-2-linear" width="13"></iconify-icon></div>
+        ArtistLedger
+        <span class="fn">register_artist</span>
+      </div>
+      <div class="header-meta">
+        <span class="net-chip"><span class="dot" id="rpcDot"></span><b id="rpcStatus">connecting…</b></span>
+        <span class="net-chip contract-chip">contract <b>0x703AdAB…4384</b> · v0.3.4</span>
+        <span id="walletLabel"></span>
+        <button class="btn ghost" id="localAcctBtn" style="padding:7px 14px;font-size:11px">Connect</button>
+      </div>
+    </header>
+
+    <div class="scroll-area">
+
+      <!-- ══════════ STATE A: register + live verify ══════════ -->
+      <div class="split" id="split">
+
+        <div class="left">
+          <div class="step-h">step 1 of 3 — register</div>
+          <h1>Register an artist</h1>
+          <p class="sub">Two independent source verifications required for a Verified stamp.</p>
+
+          <div class="field">
+            <label>Artist name (the one your fans know)</label>
+            <input id="f-name" placeholder="e.g. Caribou" value="Caribou">
+          </div>
+
+          <div class="section-divider"></div>
+
+          <div class="section-label">
+            <h2>Two-source verification</h2>
+            <span class="hint">tap two that prove it's you</span>
+          </div>
+
+          <div class="src-pick" id="srcPick">
+            <button data-src="apple_music" data-handle="45464574">Apple Music</button>
+            <button data-src="musicbrainz" data-handle="syndicate-mb">MusicBrainz</button>
+            <button data-src="bandcamp" data-handle="">Bandcamp</button>
+            <button data-src="soundcloud" data-handle="">SoundCloud</button>
+            <button data-src="instagram" data-handle="">Instagram</button>
+            <button data-src="lastfm" data-handle="">Last.fm</button>
+            <button data-src="website" data-handle="">Website</button>
+            <button data-src="tiktok" data-handle="">TikTok</button>
+          </div>
+          <div id="srcRows" style="margin-top:10px"></div>
+
+          <div class="checkboxes">
+            <label><input type="checkbox" id="fStrict" checked> Strict mode (require both sources)</label>
+            <label style="margin-left:auto">
+              Try an artist:
+              <select id="fDemo">
+                <option value="">— pick one —</option>
+                <option>Four Tet</option>
+                <option>Caribou</option>
+                <option>Skrillex</option>
+                <option>deadmau5</option>
+                <option>Daft Punk</option>
+                <option>Aphex Twin</option>
+                <option>Burial</option>
+                <option>Floating Points</option>
+                <option>Boards of Canada</option>
+                <option>Fred again..</option>
+                <option>Jamie xx</option>
+                <option>Mindex</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="btn" id="submitBtn">Sign &amp; submit proof →</button>
+          </div>
+        </div>
+
+        <div class="right">
+          <div class="step-h">step 2 of 3 — verification</div>
+          <h1 id="verify-title">Cross-referencing sources</h1>
+          <p class="sub" id="verify-sub">Live API checks via the leader. Validators independently re-derive the score.</p>
+
+          <div class="verify-status" id="verify-status">Pick an artist + two sources on the left (or use "Try an artist" →), then submit. The leader runs 7+ free public APIs, builds the evidence, and 4 validators vote. ~1-2 min. Threshold to flip to Verified is 70/100; AcoustID audio fingerprint (+20) is the single biggest unlock.</div>
+
+          <div class="score-banner">
+            <div>
+              <div class="label">verification score</div>
+              <div class="big"><span id="live-score">—</span><span class="denom">/100</span></div>
+            </div>
+            <div class="verdict">
+              <div class="label">consensus</div>
+              <div style="margin-top:6px"><span class="badge" id="live-badge">—</span></div>
+            </div>
+          </div>
+
+          <div id="live-logs" class="run-card" style="display:none">
+            <div class="h"><h3>Live verification log</h3><span class="pulse"><span class="pulse-dot"></span>live</span></div>
+            <div class="log-line" id="loglines"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════ STATE B: certificate ══════════ -->
+      <div class="cert" id="cert">
+        <div class="cert-inner">
+          <div class="crest">Provenance Registry · On-Chain Attestation</div>
+          <h1 id="cert-name">—</h1>
+          <div class="subtitle" id="cert-subtitle">verification status pending</div>
+
+          <div class="seal" id="cert-seal">—</div>
+
+          <div class="field"><span class="field-label">Wallet</span><span class="field-value mono" id="cert-wallet">—</span></div>
+          <div class="field"><span class="field-label">Handle</span><span class="field-value mono" id="cert-handle">—</span></div>
+          <div class="field"><span class="field-label">Registered</span><span class="field-value" id="cert-date">—</span></div>
+          <div class="field"><span class="field-label">Score</span><span class="field-value mono" id="cert-score">—</span></div>
+
+          <hr class="rule">
+
+          <div class="section-label">
+            <span>Two-Source Verification</span>
+            <span class="hint" id="cert-two-meta">0 / 2 matched</span>
+          </div>
+
+          <details id="cert-src1">
+            <summary><span class="label">Source I</span><span class="handle" id="s1-handle">—</span><span class="verdict" id="s1-verdict">—</span><span class="caret">▶</span></summary>
+            <div class="raw" id="s1-raw">{}</div>
+          </details>
+          <details id="cert-src2">
+            <summary><span class="label">Source II</span><span class="handle" id="s2-handle">—</span><span class="verdict" id="s2-verdict">—</span><span class="caret">▶</span></summary>
+            <div class="raw" id="s2-raw">{}</div>
+          </details>
+
+          <div class="section-label" style="margin-top: 24px;">
+            <span>Public-Data Cross-Reference</span>
+            <span class="hint" id="cert-cross-meta">—</span>
+          </div>
+
+          <div id="cross-rows"></div>
+
+          <div class="score">
+            <div class="score-num"><span id="cert-score-big">—</span><span class="denom">/100</span></div>
+            <div class="score-label">Verification Score</div>
+          </div>
+
+          <div class="breakdown" id="breakdown-rows"></div>
+
+          <div class="actions">
+            <button class="btn" id="openModal">View raw evidence</button>
+            <button class="btn ghost" id="anchorBtn">Anchor release</button>
+            <span class="cert-sep"></span>
+            <button class="btn link" id="resetBtn">Start over</button>
+          </div>
+          <div class="hint" id="cert-hint">live verification — score computed from the resolved sources above</div>
+        </div>
+      </div>
+
+    </div>
   </div>
-</div>
-</div>
-
-<!-- ══════════════ STATE B: certificate ══════════════ -->
-<div class="cert" id="cert">
-  <div class="crest">Provenance Registry · On-Chain Attestation</div>
-  <h1 id="cert-name">—</h1>
-  <div class="subtitle" id="cert-subtitle">verification status pending</div>
-
-  <div class="seal" id="cert-seal">—</div>
-
-  <div class="field"><span class="field-label">Wallet</span><span class="field-value mono" id="cert-wallet">—</span></div>
-  <div class="field"><span class="field-label">Handle</span><span class="field-value mono" id="cert-handle">—</span></div>
-  <div class="field"><span class="field-label">Registered</span><span class="field-value" id="cert-date">—</span></div>
-  <div class="field"><span class="field-label">Score</span><span class="field-value mono" id="cert-score">—</span></div>
-
-  <hr class="rule">
-
-  <div class="section-label">
-    <span>Two-Source Verification</span>
-    <span class="hint" id="cert-two-meta">0 / 2 matched</span>
-  </div>
-
-  <details id="cert-src1">
-    <summary><span class="label">Source I</span><span class="handle" id="s1-handle">—</span><span class="verdict" id="s1-verdict">—</span><span class="caret">▶</span></summary>
-    <div class="raw" id="s1-raw">{}</div>
-  </details>
-  <details id="cert-src2">
-    <summary><span class="label">Source II</span><span class="handle" id="s2-handle">—</span><span class="verdict" id="s2-verdict">—</span><span class="caret">▶</span></summary>
-    <div class="raw" id="s2-raw">{}</div>
-  </details>
-
-  <div class="section-label" style="margin-top: 24px;">
-    <span>Public-Data Cross-Reference</span>
-    <span class="hint" id="cert-cross-meta">—</span>
-  </div>
-
-  <div id="cross-rows"></div>
-
-  <div class="score">
-    <div class="score-num"><span id="cert-score-big">—</span><span class="denom">/100</span></div>
-    <div class="score-label">Verification Score</div>
-  </div>
-
-  <div class="breakdown" id="breakdown-rows"></div>
-
-  <div class="actions">
-    <button class="btn" id="openModal">View raw evidence</button>
-    <button class="btn ghost" id="anchorBtn">Anchor release</button>
-    <span class="cert-sep"></span>
-    <button class="btn link" id="resetBtn">Start over</button>
-  </div>
-  <div class="hint" id="cert-hint">live verification — score computed from the resolved sources above</div>
 </div>
 
 <!-- ══════════════ STATE C: modal (inspect) ══════════════ -->
@@ -466,6 +664,132 @@
   <span class="arrow">↺</span>
   <button id="resetFlow">reset</button>
 </div>
+
+<script>
+  /* ── clock ── */
+  function tickClock(){ document.getElementById('clock').textContent = new Date().toISOString().substring(11,19) + ' UTC'; }
+  setInterval(tickClock, 1000); tickClock();
+
+  /* ── reactive globe (state machine driven by app.js DOM signals, no app.js edits) ── */
+  const GLOBE = { mode: 'idle', burstAt: 0 };
+  const canvas = document.getElementById('network-globe'), ctx = canvas.getContext('2d');
+  let W, H, cx, cy; const nodes = [], N = 140, CD = 80;
+  function resizeGlobe(){
+    const p = canvas.parentElement, dpr = window.devicePixelRatio || 1;
+    W = p.clientWidth; H = p.clientHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx = W / 2; cy = H / 2;
+  }
+  window.addEventListener('resize', resizeGlobe);
+  (function initNodes(){
+    const phi = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < N; i++) {
+      const y = 1 - (i / (N - 1)) * 2, r = Math.sqrt(1 - y * y), th = phi * i;
+      nodes.push({ x: Math.cos(th) * r, y: y, z: Math.sin(th) * r, p: Math.random() * Math.PI * 2 });
+    }
+  })();
+  // traveling packets for "verifying" mode
+  const packets = [];
+  function spawnPacket(P) {
+    const a = P[Math.floor(Math.random() * P.length)], b = P[Math.floor(Math.random() * P.length)];
+    if (a && b && a !== b) packets.push({ a, b, t: 0 });
+  }
+  function drawGlobe(t){
+    ctx.clearRect(0, 0, W, H);
+    const busy = GLOBE.mode === 'verifying';
+    const speed = busy ? 0.0009 : 0.0003;
+    const R = Math.min(W, H) * (busy ? 0.44 : 0.42);
+    const aY = t * speed, aX = Math.sin(t * 0.0001) * 0.2, drift = Math.sin(t * 0.001) * 15;
+    const burstAge = t - GLOBE.burstAt;
+    const bursting = burstAge < 2200;
+    const P = nodes.map(n => {
+      const y1 = n.y * Math.cos(aX) - n.z * Math.sin(aX), z1 = n.y * Math.sin(aX) + n.z * Math.cos(aX);
+      const x2 = n.x * Math.cos(aY) + z1 * Math.sin(aY), z2 = -n.x * Math.sin(aY) + z1 * Math.cos(aY);
+      return { x: cx + x2 * R, y: cy + y1 * R + drift, z: z2, p: n.p };
+    });
+    P.sort((a, b) => a.z - b.z);
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < P.length; i++) {
+      const p1 = P[i]; if (p1.z < -0.6) continue;
+      for (let j = i + 1; j < P.length; j++) {
+        const p2 = P[j], dx = p1.x - p2.x, dy = p1.y - p2.y, d = Math.sqrt(dx * dx + dy * dy);
+        if (d < CD) {
+          const da = (Math.max(0, p1.z + p2.z) / 2 + 1) / 2, al = da * (1 - d / CD) * (busy ? 0.45 : 0.3);
+          if (al > 0.01) {
+            ctx.strokeStyle = bursting ? `rgba(52,211,153,${al})` : `rgba(161,161,170,${al})`;
+            ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+          }
+        }
+      }
+    }
+    P.forEach(p => {
+      let a = (p.z + 1) / 2; a = Math.max(0, Math.min(1, a * 1.5 - 0.2)); if (a <= 0) return;
+      const pulse = (Math.sin(t * 0.003 + p.p) + 1) / 2, size = (1.5 + pulse) * a, cv = Math.floor(150 + 105 * a);
+      ctx.fillStyle = bursting ? `rgba(52,211,153,${a})` : `rgba(${cv},${cv},${cv},${a})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, size, 0, Math.PI * 2); ctx.fill();
+      if (pulse > 0.95 && a > 0.5) {
+        ctx.fillStyle = bursting ? `rgba(52,211,153,${a * 0.9})` : `rgba(96,165,250,${a * 0.8})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, size * 2.5, 0, Math.PI * 2); ctx.fill();
+      }
+    });
+    // packets: dots traveling node→node while validators vote
+    if (busy) {
+      if (packets.length < 5 && Math.random() < 0.08) spawnPacket(P);
+      for (let i = packets.length - 1; i >= 0; i--) {
+        const pk = packets[i]; pk.t += 0.025;
+        if (pk.t >= 1) { packets.splice(i, 1); continue; }
+        const x = pk.a.x + (pk.b.x - pk.a.x) * pk.t, y = pk.a.y + (pk.b.y - pk.a.y) * pk.t;
+        ctx.fillStyle = 'rgba(96,165,250,.95)';
+        ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(96,165,250,.25)';
+        ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    // consensus ripple
+    if (bursting) {
+      const k = burstAge / 2200, rr = k * R * 1.6;
+      ctx.strokeStyle = `rgba(52,211,153,${(1 - k) * 0.6})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(cx, cy + drift, rr, 0, Math.PI * 2); ctx.stroke();
+    }
+    requestAnimationFrame(drawGlobe);
+  }
+  resizeGlobe(); requestAnimationFrame(drawGlobe);
+
+  /* ── state watchers: observe app.js DOM writes, drive globe + chips ── */
+  const chipConsensus = document.getElementById('chipConsensus');
+  const chipConsensusDot = document.getElementById('chipConsensusDot');
+  const chipVal = document.getElementById('chipVal');
+  function setMode(m) {
+    if (GLOBE.mode === m) return;
+    GLOBE.mode = m;
+    if (m === 'verifying') {
+      chipConsensus.textContent = 'VALIDATORS_VOTING…';
+      chipConsensusDot.className = 'dot-pulse';
+      chipVal.textContent = 'VAL.CMT_VOTING';
+    } else if (m === 'consensus') {
+      GLOBE.burstAt = performance.now();
+      chipConsensus.textContent = 'CONSENSUS_REACHED';
+      chipConsensusDot.className = 'dot-pulse green';
+      chipVal.textContent = 'VAL.CMT_4/4_ACCEPTED';
+    } else {
+      chipConsensus.textContent = 'AWAITING_SUBMISSION';
+      chipConsensusDot.className = 'dot-pulse idle';
+      chipVal.textContent = 'VAL.CMT_4/4_ACTIVE';
+    }
+  }
+  new MutationObserver(() => {
+    const txt = document.getElementById('verify-status').textContent || '';
+    if (/Submitting|consensus…|Cross-referencing/i.test(txt) && GLOBE.mode === 'idle') setMode('verifying');
+    if (/Pick an artist/i.test(txt)) setMode('idle');
+  }).observe(document.getElementById('verify-status'), { childList: true, characterData: true, subtree: true });
+  new MutationObserver(() => {
+    const b = document.getElementById('live-badge').textContent || '';
+    if (/^VRFD/.test(b)) setMode('consensus');
+  }).observe(document.getElementById('live-badge'), { childList: true, characterData: true, subtree: true });
+</script>
 
 <script src="lib/genlayer-sdk.js"></script>
 <script src="app.js"></script>
