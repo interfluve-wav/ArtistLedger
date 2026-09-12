@@ -13,7 +13,6 @@
 const CONTRACT = "0x703AdAB82751A9006aFE9c477DC344f8D9CA4384";
 const GL = window.GenLayerSDK;
 
-let client = null;        // read client
 let walletAddr = null;    // connected wallet
 let lastReceipt = null;   // for the inspect modal
 let lastData = null;      // parsed evidence + verdict
@@ -110,16 +109,32 @@ function logLine(s) {
 function clearLog() { $("loglines").textContent = ""; }
 
 // ── Wallet / RPC ───────────────────────────────────────────────────────
+// Read client is initialized once at page load so the first rpcRead()
+// doesn't pay the genlayer-js cold-start cost on every call. The write
+// client (with an account attached) is created lazily on first submit,
+// so the "Connect" click only needs to materialize the local signer.
 const LS_KEY = "artistledger.localAccountPk";
+
+let readClient = null;       // pre-warmed on page load
+let writeClient = null;      // created when account is attached
+let account = null;          // genlayer-js account object (post-Connect)
+
+function ensureReadClient() {
+  if (readClient) return readClient;
+  readClient = GL.createClient({ chain: GL.chains.studionet });
+  return readClient;
+}
+
+// Warm the read client immediately so the first RPC call is fast.
+try { ensureReadClient(); } catch (e) { /* will retry on first rpcRead */ }
 
 $("localAcctBtn").addEventListener("click", () => {
   try {
     let pk = localStorage.getItem(LS_KEY);
-    let account;
     if (pk) { account = GL.createAccount(pk); }
     else { pk = GL.generatePrivateKey(); account = GL.createAccount(pk); localStorage.setItem(LS_KEY, pk); }
     walletAddr = account.address;
-    client = GL.createClient({ chain: GL.chains.studionet, account });
+    writeClient = GL.createClient({ chain: GL.chains.studionet, account });
     $("walletLabel").textContent = shortAddr(walletAddr) + " (local)";
   } catch (e) {
     $("walletLabel").textContent = "Local account failed: " + (e.message || e);
@@ -127,8 +142,8 @@ $("localAcctBtn").addEventListener("click", () => {
 });
 
 async function rpcRead(fnName, args) {
-  if (!client) client = GL.createClient({ chain: GL.chains.studionet });
-  return client.readContract({ address: CONTRACT, functionName: fnName, args, jsonSafeReturn: true });
+  const c = ensureReadClient();
+  return c.readContract({ address: CONTRACT, functionName: fnName, args, jsonSafeReturn: true });
 }
 
 // ── Parse the on-chain receipt into a friendly result object ──────────
@@ -620,12 +635,12 @@ $("submitBtn").onclick = async () => {
   ];
 
   try {
-    const tx = await client.writeContract({ address: CONTRACT, functionName: "register_artist", args, value: 0n, leaderOnly: false });
+    const tx = await writeClient.writeContract({ address: CONTRACT, functionName: "register_artist", args, value: 0n, leaderOnly: false });
     logLine("[02] Submitted tx " + tx.slice(0, 14) + "…");
     $("verify-status").innerHTML = "<b>Waiting for consensus…</b> (4 validators re-derive the score)";
     $("live-badge").textContent = "PENDING";
 
-    const receipt = await client.waitForTransactionReceipt({ hash: tx, status: "FINALIZED", retries: 60, interval: 4000 });
+    const receipt = await writeClient.waitForTransactionReceipt({ hash: tx, status: "FINALIZED", retries: 60, interval: 4000 });
     logLine("[03] " + receipt.status_name + " / " + receipt.result_name);
 
     const data = parseReceipt(receipt);
@@ -652,17 +667,17 @@ $("submitBtn").onclick = async () => {
 // ── Boot ──────────────────────────────────────────────────────────────
 (async function boot() {
   try {
-    client = GL.createClient({ chain: GL.chains.studionet });
+    const c = ensureReadClient();
     let schema = null;
     // First try the raw JSON-RPC method (works even when the explorer indexer
     // is paused — this is what we actually rely on for read access).
     try {
-      schema = await client.request({ method: "gen_getContractSchema", params: [CONTRACT] });
+      schema = await c.request({ method: "gen_getContractSchema", params: [CONTRACT] });
     } catch (e) {
       // Fall back to the SDK helper. NOTE: this calls through the explorer
       // indexer and can fail with HTTP 500 / SQL errors when the indexer is
       // paused; we just log it and continue without blocking boot.
-      try { schema = await client.getContractSchema({ address: CONTRACT }); }
+      try { schema = await c.getContractSchema({ address: CONTRACT }); }
       catch (e2) { console.warn("[boot] schema fetch failed:", e2.message); }
     }
     const methods = Object.keys((schema && schema.methods) || {}).join(", ");
