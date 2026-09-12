@@ -14,6 +14,10 @@ if [ "$REMOTE" = "$LAST" ]; then
   exit 0
 fi
 
+# Deploy exactly what origin/main has: hard-reset the working tree so we
+# never ship stale VPS-local code (the deploy uploads the directory).
+git reset --hard origin/main --quiet 2>>"$LOG" || exit 1
+
 echo "[$(date -u '+%F %T')] new commit $REMOTE (was ${LAST:-none}), deploying..." >> "$LOG"
 OUT=$(vercel deploy --prod 2>&1 | tail -40)
 DEPLOY_URL=$(echo "$OUT" | grep -oE 'https://artistledger-frontend-[a-z0-9-]+\.vercel\.app' | head -1)
