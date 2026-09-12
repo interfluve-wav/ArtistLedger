@@ -454,16 +454,6 @@ def _soundcloud_check(handle: str) -> tuple[str, int, bool]:
         return handle, 0, False
 
 
-def _tiktok_handle(raw: str) -> str:
-    """Extract a TikTok handle from a URL or return bare handle."""
-    if "tiktok.com/@" in raw:
-        return raw.split("@")[-1].rstrip("/").split("?")[0]
-    return raw.lstrip("@").rstrip("/").split("?")[0]
-
-
-
-
-
 def _instagram_check(handle: str) -> str:
     """Return the Instagram handle if profile exists."""
     if not handle:
@@ -1100,7 +1090,8 @@ class ProvenanceRegistry(gl.Contract):
               5. bandcamp is in source_urls but bandcamp_handle is empty.
               6. The recomputed score is outside [0, 100].
               7. No tier-1 signal is present (AcoustID match, Spotify artist
-                 id, Apple Music artist id, or a verified two-source match).
+                 id, Apple Music artist id, or any claimed source that
+                 resolved AND name-bound to the claimed artist).
             """
             if not isinstance(leader_result, gl.vm.Return):
                 return False
