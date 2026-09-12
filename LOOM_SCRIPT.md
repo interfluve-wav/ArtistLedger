@@ -9,14 +9,13 @@ the beats, paraphrase, use the numbers on the screen.
 ## Before you hit record
 
 - 1280x800 Chrome, fullscreen, no bookmarks bar.
-- Open `https://artistledger-frontend.vercel.app/` (or the new
-  bradbury URL after re-point — see "Address swap" below).
+- Open `https://artistledger-frontend.vercel.app/`.
 - Have `AGENT_TANK_SUBMISSION.md` open in another window as reference.
 
-## Address swap (do this FIRST if you re-point to v0.3.6 bradbury)
+## Address sanity check (do this FIRST)
 
-1. Confirm the header reads the new contract address + version
-   (e.g. `0x<NEW>…XXXX (v0.3.6)`).
+1. Confirm the header reads `0x703AdAB…4384 (v0.3.4)` and shows
+   `connected · N methods`.
 2. If not, **stop recording, redeploy Vercel, restart**. A demo
    with a stale address in the header loses the panel in 5 sec.
 
@@ -25,8 +24,8 @@ the beats, paraphrase, use the numbers on the screen.
 | Beat | Time | What to do | What to say (one-liner) |
 |---|---|---|---|
 | 1. Hook | 0–10s | Look at camera | "Today anyone can claim to be Caribou. ArtistLedger is a GenLayer Intelligent Contract that adjudicates whether a music artist is real — by reading free public APIs and resolving the answer on-chain." |
-| 2. Live demo | 10–20s | Point at the header | "Deployed to GenLayer [studionet/bradbury]. Header shows `connected · N methods` — the contract is alive." (Don't read the address aloud — visual evidence is enough.) |
-| 3. Submit | 20–45s | Click "Use local account" → pick Caribou → click "Also include Bandcamp…" → submit. Wait ~30-60s for VRFD. | "I just submitted Caribou with real Apple Music + MusicBrainz IDs. The leader ran the public-API checks, validators re-derived the score, and the badge flipped to VRFD." |
+| 2. Live demo | 10–20s | Point at the header | "Deployed to GenLayer studionet. Header shows `connected · N methods` — the contract is alive." (Don't read the address aloud — visual evidence is enough.) |
+| 3. Submit | 20–45s | Click "Connect" → pick Caribou → click "Also include Bandcamp…" → submit. Wait ~30-60s for VRFD. | "I just submitted Caribou with real Apple Music + MusicBrainz IDs. The leader ran the public-API checks, validators re-derived the score, and the badge flipped to VRFD." |
 | 4. Strict score | 45–60s | Point at the cert "31/100 strict · 73/100 lenient · VRFD" | "The strict on-chain score is [N]/100 — below the 70-point threshold for Verified. The contract is doing its job: refusing to rubber-stamp an artist without an audio fingerprint. We don't fake it." |
 | 5. Inspect modal | 60–75s | Click "C · inspect" → Evidence JSON tab | "Every claim on-chain is auditable. The Evidence object is populated by the leader — apple_music_artist_id, soundcloud_handle, isrc_codes, the whole 27 fields." |
 | 6. Close | 75–90s | Look at camera | "Open source on GitHub — interfluve-wav/ArtistLedger. Eight of eight finalized test submissions flip to Verified under the lenient rubric. Built for Agent Tank, Onchain Justice track." |
@@ -49,7 +48,7 @@ number is also read off the cert. Both are right there.
 artists with at least one tier-1 + tier-2. If it isn't flipping,
 something regressed — check:
 
-1. Is the contract version still v0.3.4 or v0.3.6?
+1. Is the contract version still v0.3.4?
 2. Is `require_two_source` (strict mode) unchecked?
 3. Does `data.matchCount` show 2/2 in the modal?
 4. Did you click "Also include Bandcamp…"?
@@ -70,7 +69,7 @@ If 1-3 are wrong, fix and restart. If 4 was missed, redo the submit.
   if running long, never cut beat 1 (the hook).
 - **Apologizing for strict < 70** — it's the contract working. Lead
   with "the contract is doing its job".
-- **Including the wallet seed** — "Use local account" generates a
+- **Including the wallet seed** — "Connect" generates a
   throwaway key in localStorage. Don't paste anything from chat.
 - **A bad Loom is worse than no Loom** — if rushed, skip and submit
   with the How-To text instead.

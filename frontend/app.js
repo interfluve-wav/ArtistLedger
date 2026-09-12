@@ -592,7 +592,7 @@ document.querySelectorAll(".modal-tab").forEach(t => {
 
 // ── Submit (the whole pipeline: build args → send tx → wait → render cert) ─
 $("submitBtn").onclick = async () => {
-  if (!walletAddr) { alert("Click \"Use local account\" first."); return; }
+  if (!walletAddr) { alert("Click \"Connect\" first."); return; }
   if (picked.length < 1) { alert("Pick at least 1 source."); return; }
   if (!$("f-name").value.trim()) { alert("Artist name is required."); return; }
 

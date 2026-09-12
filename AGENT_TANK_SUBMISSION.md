@@ -65,7 +65,7 @@ the UI shows that AND a friendlier projection side-by-side.
    Header reads "contract 0x703AdAB…4384 (v0.3.4)" and shows
    "connected · 8 methods" once Studio RPC is reachable.
 
-2. Click "Use local account" in the top-right. A fresh wallet is
+2. Click "Connect" in the top-right. A fresh local signer is
    generated and persisted in localStorage; the wallet label
    appears next to the button (shows short address 0x1234…abcd).
 
