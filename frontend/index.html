@@ -50,18 +50,19 @@
   }
   .header-meta .btn.ghost { background: transparent; color: var(--ink); }
 
-  /* ═════════════ STATE A: split-pane (register + live verify) ═════════════ */
-  .split { display: grid; grid-template-columns: 1fr 1fr; min-height: calc(100vh - 51px); }
+  /* ═════════════ STATE A: stacked layout (register above, live verify below) ═════════════ */
+  .split { display: grid; grid-template-columns: 1fr; grid-auto-rows: min-content; min-height: calc(100vh - 51px); }
   .split.hidden { display: none; }
   .left {
-    background: white; border-right: 1px solid var(--line-ui);
+    background: white;
     padding: 20px 24px;
-    overflow-y: auto; max-height: calc(100vh - 51px);
+    overflow-y: auto;
     transition: opacity 0.4s ease, transform 0.4s ease;
   }
   .right {
     padding: 20px 24px; background: var(--bg);
-    overflow-y: auto; max-height: calc(100vh - 51px);
+    border-top: 1px solid var(--line-ui);
+    overflow-y: auto;
     transition: opacity 0.4s ease, transform 0.4s ease;
   }
   .split.fading .left, .split.fading .right { opacity: 0; transform: translateY(8px); }
