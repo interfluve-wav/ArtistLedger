@@ -297,12 +297,49 @@ function renderCertificate(data, receipt) {
     $(s.rid).textContent = JSON.stringify({ source: s.src.src, handle: s.src.handle, contract_src: toContractSrc(s.src.src) }, null, 2);
   });
 
-  // Cross-reference rows from leader evidence
+  // Cross-reference rows from leader evidence. SECURITY: build with DOM
+  // APIs (textContent) instead of template-literal innerHTML. The m.detail
+  // values come from on-chain evidence fields (e.g. e.bandcamp_handle)
+  // and a malicious claimed source could submit a handle containing HTML
+  // tags. innerHTML would execute them; textContent treats them as text.
   const rows = $("cross-rows");
   rows.innerHTML = "";
   for (const m of data.matched) {
     const det = document.createElement("details");
-    det.innerHTML = `<summary><span class="label">${m.label}</span><span class="handle">${m.detail || ""}</span><span class="verdict ${m.verdict === "claimed" ? "warn" : m.verdict === "match" || m.verdict === "verified" || m.verdict === "track" ? "ok" : ""}">${m.verdict}</span><span class="caret">▶</span></summary><div class="raw">${m.detail || ""}</div>`;
+
+    const summary = document.createElement("summary");
+
+    const lbl = document.createElement("span");
+    lbl.className = "label";
+    lbl.textContent = m.label;
+    summary.appendChild(lbl);
+
+    const handle = document.createElement("span");
+    handle.className = "handle";
+    handle.textContent = m.detail || "";
+    summary.appendChild(handle);
+
+    const verdictEl = document.createElement("span");
+    const verdictClass =
+      m.verdict === "claimed" ? "warn"
+      : (m.verdict === "match" || m.verdict === "verified" || m.verdict === "track") ? "ok"
+      : "";
+    verdictEl.className = "verdict " + verdictClass;
+    verdictEl.textContent = m.verdict;
+    summary.appendChild(verdictEl);
+
+    const caret = document.createElement("span");
+    caret.className = "caret";
+    caret.textContent = "▶";
+    summary.appendChild(caret);
+
+    det.appendChild(summary);
+
+    const raw = document.createElement("div");
+    raw.className = "raw";
+    raw.textContent = m.detail || "";
+    det.appendChild(raw);
+
     rows.appendChild(det);
   }
   $("cert-cross-meta").textContent = `${data.matched.length} signals observed`;
@@ -604,7 +641,7 @@ $("submitBtn").onclick = async () => {
     go("B");
   } catch (e) {
     logLine("[err] " + (e.message || e));
-    $("verify-status").innerHTML = "<span class=\"err\">Error: " + (e.message || e) + "</span>";
+    $("verify-status").textContent = "Error: " + (e.message || e);
     $("submitBtn").disabled = false;
     $("submitBtn").textContent = "Sign & submit proof →";
   }
