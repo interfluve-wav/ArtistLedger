@@ -103,6 +103,14 @@ class Evidence:
     instagram_handle: str
     lastfm_scrobble_count: u256
 
+    # Tier 2.6 — ownership proofs (artist-controlled token on their own
+    # profile, max 24 points: W_OWNERSHIP_PROOF x2 channels)
+    ownership_proof_soundcloud: bool     # ALVERIFY token in SoundCloud bio
+    ownership_proof_lastfm: bool         # token in Last.fm journal/bio + ≥200 scrobble account
+    ownership_proof_bandcamp: bool       # token in Bandcamp about/disco
+    ownership_proof_youtube: bool        # token in YouTube channel description
+    ownership_lastfm_scrobbles: u256     # account maturity (lifetime scrobbles)
+
     # Tier 2.5 — two-source verification (DISCO parity, claim + cross-ref)
     verification_source_1: str          # e.g. "spotify_url" / "bandcamp_url"
     verification_handle_1: str
@@ -173,6 +181,11 @@ class Evidence:
             soundcloud_verified=False,
             instagram_handle="",
             lastfm_scrobble_count=u256(0),
+            ownership_proof_soundcloud=False,
+            ownership_proof_lastfm=False,
+            ownership_proof_bandcamp=False,
+            ownership_proof_youtube=False,
+            ownership_lastfm_scrobbles=u256(0),
             verification_source_1="",
             verification_handle_1="",
             verification_source_2="",
@@ -193,7 +206,9 @@ DISPUTE_UPHOLD_THRESHOLD: u256 = u256(60)
 VALIDATOR_TOLERANCE: u256 = u256(15)
 REPUTATION_PENALTY_PER_UPHELD_DISPUTE: u256 = u256(10)
 
-# Factor weights (sum to 100 max deterministic + ±5 LLM)
+# Factor weights (sum to 100 max deterministic + ±5 LLM; ownership proofs
+# can only substitute for weak tiers, the final max(0, min(100, …)) cap
+# keeps the scale honest)
 W_ACOUSTID: int = 20
 W_ISRC: int = 10
 W_SPOTIFY: int = 10
@@ -207,6 +222,15 @@ W_SINGLE_SOURCE_MATCH: int = 8
 W_WALLET_AGE: int = 5
 W_WALLET_NAME: int = 5
 W_LLM_ADJUSTMENT_RANGE: int = 5
+# Ownership proofs (Tier 2.6): artist-controlled token on their own
+# profile. Each confirmed channel is worth W_OWNERSHIP_PROOF, capped at
+# TWO confirmed channels (W_OWNERSHIP_CAP) so one dedicated scammer with
+# N accounts can't out-score a real artist with two clean proofs.
+W_OWNERSHIP_PROOF: int = 12
+W_OWNERSHIP_CAP: int = 2
+# Last.fm ownership-proof maturity floor: an account below this lifetime
+# scrobble count is "fresh" — its token doesn't count as ownership proof.
+LASTFM_SCROBBLE_FLOOR: int = 200
 
 # API base URLs
 ACOUSTID_URL: str = "https://api.acoustid.org/v2/lookup"
@@ -725,6 +749,117 @@ def _lastfm_scrobbles(artist: str, lastfm_user: str, lastfm_key: str) -> int:
         return 0
 
 
+# ─── Tier 2.6 — ownership proofs (artist-controlled tokens) ───────────────
+
+def _token_in_text(text: str, token: str) -> bool:
+    """Case-sensitive exact containment of the full ALVERIFY token.
+
+    Case-sensitive on purpose: the token is a random base32-ish string,
+    so demanding exact form kills case-folding sybil variants like
+    alverify-xxxx masquerading as the real claim.
+    """
+    if not text or not token:
+        return False
+    return token in text
+
+
+def _soundcloud_bio(handle: str) -> str:
+    """Fetch the profile HTML and extract the bio/description text.
+
+    SoundCloud embeds the profile JSON (including `description`) in the
+    page's __NEXT_DATA__ / og:description meta. We grep both, plus the
+    plain body as a last resort — the token is distinctive enough that
+    any of the three carrying it is proof.
+    """
+    if not handle:
+        return ""
+    try:
+        body = _http_get(f"https://soundcloud.com/{handle}")
+        bio = _regex_any(body, (
+            r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"',
+            r'<meta[^>]+property="og:description"[^>]+content="([^"]+)"',
+            r'<meta[^>]+name="description"[^>]+content="([^"]+)"',
+        ))
+        # JSON-escaped bio: unescape \" and \/ so the token matches
+        return bio.replace('\\n', '\n').replace('\\"', '"').replace('\\/', '/')
+    except Exception:
+        return ""
+
+
+def _lastfm_profile_and_scrobbles(handle: str, lastfm_key: str) -> tuple[str, int]:
+    """Fetch a Last.fm user page: returns (bio_html, lifetime_scrobbles).
+
+    Lifetime scrobble count comes from the user profile page (embedded
+    JSON `scrobbles` field) — it's the account-maturity signal: a brand
+    new sybil account has ~0 scrobbles regardless of what their bio says.
+    """
+    if not handle:
+        return "", 0
+    try:
+        body = _http_get(f"https://www.last.fm/user/{handle}")
+        scrobbles_str = _regex_any(body, (
+            r'"scrobbles"\s*:\s*{\s*"count"\s*:\s*(\d+)',
+            r'([\d,]+)\s*scrobbles?',
+        ))
+        try:
+            scrobbles = int(scrobbles_str.replace(",", "")) if scrobbles_str else 0
+        except ValueError:
+            scrobbles = 0
+        return body, scrobbles
+    except Exception:
+        return "", 0
+
+
+def _bandcamp_about(subdomain: str) -> str:
+    """Fetch a Bandcamp artist page's about/disco text.
+
+    Bandcamp embeds the artist bio in the page's og:description and in
+    the `band_data` JSON blob. The artist edits this in their Bandcamp
+    profile ("Edit profile" → bio), so a token there is proof of control.
+    """
+    if not subdomain:
+        return ""
+    try:
+        body = _http_get(f"https://{subdomain}.bandcamp.com")
+        about = _regex_any(body, (
+            r'<meta[^>]+property="og:description"[^>]+content="([^"]+)"',
+            r'"about"\s*:\s*"((?:[^"\\]|\\.)*)"',
+            r'<p class="artists-bio-text">([^<]+)</p>',
+        ))
+        return about.replace('\\"', '"').replace('\\/', '/')
+    except Exception:
+        return ""
+
+
+def _youtube_description(raw: str) -> str:
+    """Fetch a YouTube channel's description text.
+
+    `raw` is a handle (@name), channel URL, or channel ID. Channel pages
+    are JS-heavy, but the description is present in the initial HTML
+    inside ytInitialData and in the og:description meta — the meta is
+    the stable one.
+    """
+    if not raw:
+        return ""
+    h = raw.strip().lstrip("@").replace("https://youtube.com/", "").replace("https://www.youtube.com/", "")
+    h = h.split("/channel/")[-1].split("/c/")[-1].split("/@")[-1].rstrip("/")
+    if not h:
+        return ""
+    try:
+        if h.startswith("UC"):
+            url = f"https://www.youtube.com/channel/{h}"
+        else:
+            url = f"https://www.youtube.com/@{h}"
+        body = _http_get(url)
+        desc = _regex_any(body, (
+            r'<meta[^>]+property="og:description"[^>]+content="([^"]+)"',
+            r'"description":\s*\{\s*"simpleText":\s*"((?:[^"\\]|\\.)*)"',
+        ))
+        return desc.replace('\\n', '\n').replace('\\"', '"').replace('\\/', '/')
+    except Exception:
+        return ""
+
+
 # ─── Tier 5 (wallet-derived) ──────────────────────────────────────────────
 
 def _wallet_age_days(wallet: str, etherscan_key: str) -> int:
@@ -838,6 +973,15 @@ def _score_evidence(ev, claimed_name: str) -> int:
         score += W_TWO_SOURCE_MATCH
     elif m == 1:
         score += W_SINGLE_SOURCE_MATCH
+
+    # Tier 2.6 — ownership proofs (max W_OWNERSHIP_PROOF × W_OWNERSHIP_CAP)
+    ownership_count = sum(1 for k in (
+        "ownership_proof_soundcloud",
+        "ownership_proof_lastfm",
+        "ownership_proof_bandcamp",
+        "ownership_proof_youtube",
+    ) if _ev_get(ev, k, False))
+    score += W_OWNERSHIP_PROOF * min(ownership_count, W_OWNERSHIP_CAP)
 
     # Tier 5 (max 10)
     if int(_ev_get(ev, "wallet_age_days", 0)) >= 90:
@@ -966,6 +1110,8 @@ class ProvenanceRegistry(gl.Contract):
         verification_source_2: str = "",
         verification_handle_2: str = "",
         require_two_source: bool = True,
+        ownership_token: str = "",   # ALVERIFY token the artist pasted into their profiles
+        ownership_proofs: dict = {}, # {"soundcloud": "handle", "lastfm": "user", "bandcamp": "subdomain", "youtube": "handle"} — which profiles carry the token
     ) -> str:
         """
         Verify a wallet as belonging to a real human artist.
@@ -1047,6 +1193,30 @@ class ProvenanceRegistry(gl.Contract):
                 match_total += 1
             ev.verification_match_count = u256(match_total)
 
+            # Tier 2.6 — ownership proofs. The artist pasted an ALVERIFY
+            # token into profiles they control; the leader re-fetches each
+            # claimed profile and greps for the exact token. Last.fm adds
+            # an account-maturity floor (LIFETIME_SCROBBLE_FLOOR): a token
+            # on a fresh sybil account doesn't count.
+            if ownership_token and ownership_proofs:
+                op = ownership_proofs  # local alias for closure readability
+                if op.get("soundcloud"):
+                    bio = _soundcloud_bio(_normalize_soundcloud(op["soundcloud"]))
+                    ev.ownership_proof_soundcloud = _token_in_text(bio, ownership_token)
+                if op.get("lastfm"):
+                    body, scrobbles = _lastfm_profile_and_scrobbles(op["lastfm"], lastfm_key)
+                    ev.ownership_lastfm_scrobbles = u256(scrobbles)
+                    ev.ownership_proof_lastfm = (
+                        _token_in_text(body, ownership_token)
+                        and scrobbles >= LASTFM_SCROBBLE_FLOOR
+                    )
+                if op.get("bandcamp"):
+                    about = _bandcamp_about(_normalize_bandcamp(op["bandcamp"]))
+                    ev.ownership_proof_bandcamp = _token_in_text(about, ownership_token)
+                if op.get("youtube"):
+                    desc = _youtube_description(op["youtube"])
+                    ev.ownership_proof_youtube = _token_in_text(desc, ownership_token)
+
             # Tier 5
             ev.wallet_age_days = _wallet_age_days(wallet, etherscan_key)
             ens_name, _ = _ens_data(wallet)
@@ -1120,6 +1290,14 @@ class ProvenanceRegistry(gl.Contract):
                     return False
                 # bandcamp_handle must not be empty if claimed in source_urls.
                 if source_urls.get("bandcamp") and not leader_dict.get("bandcamp_handle"):
+                    return False
+                # Ownership-proof fabrication guard: a claimed Last.fm proof
+                # with a scrobble count below the maturity floor is a lie the
+                # leader could have fabricated (mature accounts can't be
+                # created in a block). Reject the whole evidence.
+                if leader_dict.get("ownership_proof_lastfm") and int(
+                    leader_dict.get("ownership_lastfm_scrobbles", 0) or 0
+                ) < LASTFM_SCROBBLE_FLOOR:
                     return False
 
                 leader_score = _score_evidence_from_dict(leader_dict, name)
@@ -1374,6 +1552,16 @@ def _build_sources_summary(ev: Evidence, source_urls: dict) -> str:
         lines.append(f"Instagram: handle={ev.instagram_handle}")
     if int(ev.lastfm_scrobble_count) > 0:
         lines.append(f"Last.fm scrobbles: {int(ev.lastfm_scrobble_count)}")
+    ownership_flags = [
+        name for name, key in (
+            ("SoundCloud bio", "ownership_proof_soundcloud"),
+            ("Last.fm profile", "ownership_proof_lastfm"),
+            ("Bandcamp about", "ownership_proof_bandcamp"),
+            ("YouTube description", "ownership_proof_youtube"),
+        ) if getattr(ev, key, False)
+    ]
+    if ownership_flags:
+        lines.append(f"Ownership proof tokens found in: {', '.join(ownership_flags)}")
     if ev.verification_source_1:
         lines.append(
             f"Source 1: {ev.verification_source_1}={ev.verification_handle_1} "
@@ -1410,6 +1598,11 @@ def _score_evidence_from_dict(d: dict, name: str) -> int:
             soundcloud_verified=bool(d.get("soundcloud_verified", False)),
             instagram_handle=d.get("instagram_handle", ""),
             lastfm_scrobble_count=u256(int(d.get("lastfm_scrobble_count", 0))),
+            ownership_proof_soundcloud=bool(d.get("ownership_proof_soundcloud", False)),
+            ownership_proof_lastfm=bool(d.get("ownership_proof_lastfm", False)),
+            ownership_proof_bandcamp=bool(d.get("ownership_proof_bandcamp", False)),
+            ownership_proof_youtube=bool(d.get("ownership_proof_youtube", False)),
+            ownership_lastfm_scrobbles=u256(int(d.get("ownership_lastfm_scrobbles", 0))),
             verification_source_1=d.get("verification_source_1", ""),
             verification_handle_1=d.get("verification_handle_1", ""),
             verification_source_2=d.get("verification_source_2", ""),
