@@ -102,8 +102,17 @@ soundcloud_handle, isrc_codes, etc.). Validator tab shows result_name
 ```
 (487 chars)
 
-**Contract link 1 (optional)**: `https://genlayer-explorer.vercel.app/address/0x703AdAB82751A9006aFE9c477DC344f8D9CA4384`
-*(note: explorer indexer is currently DEPLOYMENT_PAUSED, panel can verify via direct Studio RPC at https://studio.genlayer.com/api)*
+**Contract link 1 (optional)**: `https://studio.genlayer.com/api` — verify with `eth_call` (returns `0x...01` for any deployed contract) or via the live frontend header.
+
+Verify live (Studio RPC):
+```bash
+curl -sS -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+  https://studio.genlayer.com/api
+# returns the current studionet block height (chainId 61999)
+```
+
+*(note: the public explorer at genlayer-explorer.vercel.app is paused at the Vercel level — use the live frontend header or Studio RPC instead)*
 
 ### 09 · PROJECT LINKS
 
