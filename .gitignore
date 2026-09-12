@@ -8,3 +8,6 @@ __pycache__/
 .vercel/
 artistledger.egg-info/
 .addresses
+.vercel
+.env*
+.last-deployed-sha
