@@ -15,8 +15,9 @@ if [ "$REMOTE" = "$LAST" ]; then
 fi
 
 echo "[$(date -u '+%F %T')] new commit $REMOTE (was ${LAST:-none}), deploying..." >> "$LOG"
-OUT=$(vercel deploy --prod 2>&1 | tail -20)
-if echo "$OUT" | grep -q "Aliased"; then
+OUT=$(vercel deploy --prod 2>&1 | tail -40)
+DEPLOY_URL=$(echo "$OUT" | grep -oE 'https://artistledger-frontend-[a-z0-9-]+\.vercel\.app' | head -1)
+if echo "$OUT" | grep -qE '"status":\s*"ok"|Aliased'; then
   echo "$REMOTE" > "$DEPLOYED_FILE"
   echo "[$(date -u '+%F %T')] deployed OK: $(echo "$OUT" | grep -oE 'https://artistledger-frontend-[a-z0-9-]+\.vercel\.app' | head -1)" >> "$LOG"
 else
