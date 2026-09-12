@@ -213,6 +213,24 @@
     margin-left: 6px; padding: 7px 10px; border: 1px solid var(--line-soft); border-radius: var(--r-md);
     background: #18181b; color: var(--ink); font-family: var(--mono); font-size: 11px; outline: none; cursor: pointer;
   }
+
+  /* ownership proofs (Tier 2.6) */
+  .ownership-intro { font-size: 11px; color: var(--ink-3); line-height: 1.6; margin-bottom: var(--s3); font-weight: 300; }
+  .own-token-row { display: flex; gap: var(--s2); margin-bottom: var(--s3); }
+  .own-token-row input {
+    flex: 1; min-width: 0; padding: 9px 11px; border: 1px solid var(--line-soft); border-radius: var(--r-md);
+    background: #050505; color: var(--ok); font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+  }
+  .own-token-row .btn { padding: 9px 13px; font-size: 11px; flex-shrink: 0; }
+  .own-row { display: grid; grid-template-columns: 128px 1fr 30px; gap: var(--s2); margin-bottom: var(--s2); align-items: center; }
+  .own-row select, .own-row input {
+    padding: 8px 10px; font-size: 12px; background: #050505; color: var(--ink);
+    border: 1px solid var(--line-soft); border-radius: var(--r-sm); font-family: var(--mono);
+    outline: none; transition: border-color .2s; width: 100%;
+  }
+  .own-row select:focus, .own-row input:focus { border-color: rgba(96,165,250,.5); }
+  .own-row .rm { background: #18181b; border: 1px solid var(--line-soft); color: var(--ink-3); padding: 6px; border-radius: var(--r-sm); cursor: pointer; font-family: inherit; transition: all .2s; }
+  .own-row .rm:hover { color: var(--err); border-color: rgba(248,113,113,.5); }
   .actions { margin-top: var(--s5); }
   #submitBtn { width: 100%; padding: 12px 18px; font-size: 13px; }
 
@@ -528,6 +546,21 @@
             <button data-src="tiktok" data-handle="">TikTok</button>
           </div>
           <div id="srcRows" style="margin-top:10px"></div>
+
+          <!-- ── Prove it's you: ownership proofs (Tier 2.6) ── -->
+          <div class="section-divider"></div>
+          <div class="section-label">
+            <h2>Prove it's you <span style="color:var(--ok);font-size:10px;font-family:var(--mono);letter-spacing:.08em">+12 PER CHANNEL · MAX 2</span></h2>
+            <span class="hint">optional · strongest signal</span>
+          </div>
+          <p class="ownership-intro">Paste the token below into the bio/about of profiles you control, add the handle, and the validators will find it. Last.fm accounts need 200+ lifetime scrobbles (no fresh accounts).</p>
+          <div class="own-token-row">
+            <input id="own-token" readonly title="Your ownership token — paste into platform bios">
+            <button class="btn ghost" id="own-copy">Copy</button>
+            <button class="btn ghost" id="own-regen" title="Regenerate token">↻</button>
+          </div>
+          <div id="own-rows"></div>
+          <button class="btn link" id="own-add" style="margin-top:8px">+ add a platform</button>
 
           <div class="checkboxes">
             <label><input type="checkbox" id="fStrict" checked> Strict mode (require both sources)</label>
