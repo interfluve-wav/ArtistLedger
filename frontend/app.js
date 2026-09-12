@@ -652,87 +652,6 @@ document.querySelectorAll(".modal-tab").forEach(t => {
   };
 });
 
-// ── Ownership proofs (Tier 2.6): ALVERIFY token + per-platform rows ─────
-const OWN_PLATFORMS = [
-  { id: "soundcloud", label: "SoundCloud bio",  ph: "handle (e.g. four-tet)",      url: (h) => `https://soundcloud.com/${h}` },
-  { id: "lastfm",     label: "Last.fm profile", ph: "username (200+ scrobbles)",   url: (h) => `https://www.last.fm/user/${h}` },
-  { id: "bandcamp",   label: "Bandcamp about",  ph: "subdomain (e.g. fourtet)",    url: (h) => `https://${h}.bandcamp.com` },
-  { id: "youtube",    label: "YouTube channel", ph: "@handle or channel URL",      url: (h) => `https://www.youtube.com/${h.startsWith("@") || h.startsWith("UC") ? h : "@" + h}` },
-];
-let ownToken = "";
-
-function genOwnershipToken() {
-  // ALVERIFY-<16 random base32>-<unix hour> — hour granularity makes the
-  // token stable across page reloads in the same session but unique per claim.
-  const abc = "ABCDEFGHJKMNPQRSTVWXYZ23456789";
-  let rnd = "";
-  const arr = new Uint8Array(16);
-  crypto.getRandomValues(arr);
-  for (const b of arr) rnd += abc[b % abc.length];
-  ownToken = `ALVERIFY-${rnd}-${Math.floor(Date.now() / 3600000)}`;
-  $("own-token").value = ownToken;
-  return ownToken;
-}
-
-function ownershipProofsDict() {
-  // Collect filled platform rows → {platform: handle} for the contract.
-  const out = {};
-  document.querySelectorAll("#own-rows .own-row").forEach(row => {
-    const plat = row.querySelector("select").value;
-    const handle = row.querySelector("input").value.trim();
-    if (plat && handle) out[plat] = handle;
-  });
-  return out;
-}
-
-function renderOwnRows() {
-  const box = $("own-rows");
-  const rows = [...box.querySelectorAll(".own-row")];
-  box.innerHTML = "";
-  rows.forEach(r => box.appendChild(r)); // keep existing rows (rebuild-safe)
-}
-
-function addOwnRow(plat = "", handle = "") {
-  const box = $("own-rows");
-  if (box.children.length >= 4) return; // 4 channels max
-  const row = document.createElement("div");
-  row.className = "own-row";
-  const sel = document.createElement("select");
-  const blank = document.createElement("option");
-  blank.value = ""; blank.textContent = "platform…";
-  sel.appendChild(blank);
-  for (const p of OWN_PLATFORMS) {
-    const o = document.createElement("option");
-    o.value = p.id; o.textContent = p.label;
-    sel.appendChild(o);
-  }
-  sel.value = plat;
-  const inp = document.createElement("input");
-  inp.placeholder = "handle"; inp.value = handle; inp.spellcheck = false;
-  inp.addEventListener("focus", () => {
-    const p = OWN_PLATFORMS.find(x => x.id === sel.value);
-    if (p) inp.placeholder = p.ph;
-  });
-  const rm = document.createElement("button");
-  rm.className = "rm"; rm.textContent = "✕"; rm.title = "remove";
-  rm.onclick = () => row.remove();
-  row.append(sel, inp, rm);
-  box.appendChild(row);
-}
-
-function initOwnershipUI() {
-  genOwnershipToken();
-  $("own-copy").onclick = async () => {
-    try { await navigator.clipboard.writeText(ownToken); $("own-copy").textContent = "Copied ✓";
-      setTimeout(() => ($("own-copy").textContent = "Copy"), 1600); } catch {}
-  };
-  $("own-regen").onclick = () => genOwnershipToken();
-  $("own-add").onclick = () => addOwnRow();
-  // empty by default; user opts in
-}
-
-initOwnershipUI();
-
 // ── Submit (the whole pipeline: build args → send tx → wait → render cert) ─
 $("submitBtn").onclick = async () => {
   if (!walletAddr) { alert("Click \"Connect\" first."); return; }
@@ -760,7 +679,6 @@ $("submitBtn").onclick = async () => {
     name, "0x" + "11".repeat(32),
     sourceUrls, walletAddr,
     vs1, vh1, vs2, vh2, $("fStrict").checked,
-    ownToken, ownershipProofsDict(),
   ];
 
   try {
