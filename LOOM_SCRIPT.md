@@ -1,100 +1,76 @@
-# Loom script — ArtistLedger demo (≤90 seconds)
+# Loom — ArtistLedger demo (≤90 sec)
 
-**Goal**: show the panel an honest, working ArtistLedger demo. Pace yourself
-— 90 seconds is tight. Speak slowly, don't rush. The portal says
-"video pitches and shortlisted ideas earn more", so a polished Loom
-moves you up the ranking.
+**Goal**: honest, working demo that lands the Onchain Justice track.
+Speak slowly; 90 sec is tight. Don't read this on camera — memorize
+the beats, paraphrase, use the numbers on the screen.
 
-## Setup before recording (30 sec)
+---
 
-1. Open https://artistledger-frontend.vercel.app/ in a clean Chrome
-   window at 1280x800 (or larger). Make sure your face-cam or no-cam
-   shows the site taking up most of the screen.
-2. Hide bookmarks bar, close other tabs.
-3. Open the [AGENT_TANK_SUBMISSION.md](AGENT_TANK_SUBMISSION.md) once
-   in another window as a reference — don't read from it on camera.
+## Before you hit record
 
-## Script (read this verbatim, ~85 sec total)
+- 1280x800 Chrome, fullscreen, no bookmarks bar.
+- Open `https://artistledger-frontend.vercel.app/` (or the new
+  bradbury URL after re-point — see "Address swap" below).
+- Have `AGENT_TANK_SUBMISSION.md` open in another window as reference.
 
-> **[0-10 sec — open with the hook]**
->
-> "Today anyone can claim to be Caribou. ArtistLedger is a GenLayer
-> Intelligent Contract that adjudicates whether a music artist is
-> real, by reading 8 free public APIs and resolving the answer
-> on-chain."
->
-> **[10-20 sec — point at the live demo header]**
->
-> "Here's the live demo — deployed to GenLayer studionet at
-> `0x703AdAB…4384`. Header shows 'connected · 8 methods' once
-> Studio RPC is reachable."
->
-> **[20-40 sec — run a Caribou submit]**
->
-> [click "Use local account" → wallet appears]
-> [open "Try an artist" → pick Caribou]
-> [click "Also include Bandcamp/SoundCloud/Instagram/Last.fm" → 6 rows]
-> [click "Sign & submit proof →"]
-> [wait for VRFD badge, ~30-60 sec]
->
-> "I just submitted Caribou with real Apple Music + MusicBrainz IDs.
-> The leader ran 8 API checks, validators re-derived the score, and
-> the badge flipped to VRFD. The strict on-chain score is 31 — below
-> the 70-point threshold for Verified — but the contract is doing
-> exactly what it should: refusing to rubber-stamp an artist without
-> an audio fingerprint."
->
-> **[40-55 sec — show the lenient rubric + breakdown]**
->
-> [point at the cert showing "31/100 strict · 73/100 lenient · VRFD"]
->
-> "We don't fake the score. The contract returns 31, and we show both
-> the strict number and a friendlier projection side-by-side so
-> anyone can see exactly what the on-chain truth is versus what a
-> real artist looks like in practice."
->
-> **[55-75 sec — show the Inspect modal]**
->
-> [click "C · inspect"]
-> [click "Evidence JSON" tab]
->
-> "Here's the typed Evidence object the leader returned — populated with
-> apple_music_artist_id, soundcloud_handle, isrc_codes, the whole 27
-> fields. Every claim on-chain is auditable."
->
-> **[75-90 sec — close]**
->
-> "Open source on GitHub — github.com/interfluve-wav/ArtistLedger.
-> Eight of eight finalized test submissions flip to Verified under the
-> lenient rubric. Built for the Agent Tank Hackathon, Onchain Justice
-> track."
->
-> [end recording]
+## Address swap (do this FIRST if you re-point to v0.3.6 bradbury)
 
-## Post-recording
+1. Confirm the header reads the new contract address + version
+   (e.g. `0x<NEW>…XXXX (v0.3.6)`).
+2. If not, **stop recording, redeploy Vercel, restart**. A demo
+   with a stale address in the header loses the panel in 5 sec.
 
-1. Upload to Loom, set to **public** (panel needs to view without
-   login).
-2. Copy the Loom URL (looks like `https://www.loom.com/share/<id>`).
-3. Paste it into the **Demo Video** field of the submission form.
-4. Submit the form.
+## The beats (90 sec, in this order)
 
-## Common mistakes to avoid
+| Beat | Time | What to do | What to say (one-liner) |
+|---|---|---|---|
+| 1. Hook | 0–10s | Look at camera | "Today anyone can claim to be Caribou. ArtistLedger is a GenLayer Intelligent Contract that adjudicates whether a music artist is real — by reading free public APIs and resolving the answer on-chain." |
+| 2. Live demo | 10–20s | Point at the header | "Deployed to GenLayer [studionet/bradbury]. Header shows `connected · N methods` — the contract is alive." (Don't read the address aloud — visual evidence is enough.) |
+| 3. Submit | 20–45s | Click "Use local account" → pick Caribou → click "Also include Bandcamp…" → submit. Wait ~30-60s for VRFD. | "I just submitted Caribou with real Apple Music + MusicBrainz IDs. The leader ran the public-API checks, validators re-derived the score, and the badge flipped to VRFD." |
+| 4. Strict score | 45–60s | Point at the cert "31/100 strict · 73/100 lenient · VRFD" | "The strict on-chain score is [N]/100 — below the 70-point threshold for Verified. The contract is doing its job: refusing to rubber-stamp an artist without an audio fingerprint. We don't fake it." |
+| 5. Inspect modal | 60–75s | Click "C · inspect" → Evidence JSON tab | "Every claim on-chain is auditable. The Evidence object is populated by the leader — apple_music_artist_id, soundcloud_handle, isrc_codes, the whole 27 fields." |
+| 6. Close | 75–90s | Look at camera | "Open source on GitHub — interfluve-wav/ArtistLedger. Eight of eight finalized test submissions flip to Verified under the lenient rubric. Built for Agent Tank, Onchain Justice track." |
 
-- **Don't** read the script word-for-word on camera. Memorize the
-  beats (hook → live demo → submit → VRFD → inspect → close) and
-  paraphrase. The panel can tell when you're reading.
-- **Don't** go over 90 seconds — Loom cuts off at the free tier's
-  5-minute mark anyway, but the panel attention span drops hard
-  after 90s.
-- **Don't** include your private key or wallet seed in the recording.
-  Just click "Use local account" — the SDK generates a throwaway key.
-- **Don't** apologize for the strict score being below 70. That's
-  the contract doing its job. Lead with the lenient rubric story.
+## If the strict score on the day isn't 31
 
-## If you can't record a Loom
+**Don't fake it.** Paraphrase beat 4:
 
-The Demo Video field is optional. You can submit without it.
-The How-To field already walks the panel through the demo verbally,
-and they can do it themselves in <2 min. A bad Loom is worse than no
-Loom — skip it if you're rushed.
+> "The strict on-chain score is below 70 — the contract refusing to
+> rubber-stamp without an audio fingerprint is the WHOLE POINT.
+> Here's the lenient projection the demo uses so the panel can see
+> what Verified would look like under a friendlier rubric."
+
+The strict number is read off the cert, not the script. The lenient
+number is also read off the cert. Both are right there.
+
+## If the lenient score on the day isn't ≥60 (no VRFD)
+
+**Stop the demo.** The lenient rubric is calibrated to flip real
+artists with at least one tier-1 + tier-2. If it isn't flipping,
+something regressed — check:
+
+1. Is the contract version still v0.3.4 or v0.3.6?
+2. Is `require_two_source` (strict mode) unchecked?
+3. Does `data.matchCount` show 2/2 in the modal?
+4. Did you click "Also include Bandcamp…"?
+
+If 1-3 are wrong, fix and restart. If 4 was missed, redo the submit.
+
+## After recording
+
+1. Upload to Loom, set to **public**.
+2. Copy URL (`https://www.loom.com/share/<id>`).
+3. Paste into the Demo Video field of the submission form.
+
+## Common mistakes
+
+- **Reading word-for-word on camera** — the panel can tell. Memorize
+  the beats, paraphrase.
+- **Going over 90s** — attention drops hard. Cut beats 5 and 6 first
+  if running long, never cut beat 1 (the hook).
+- **Apologizing for strict < 70** — it's the contract working. Lead
+  with "the contract is doing its job".
+- **Including the wallet seed** — "Use local account" generates a
+  throwaway key in localStorage. Don't paste anything from chat.
+- **A bad Loom is worse than no Loom** — if rushed, skip and submit
+  with the How-To text instead.
