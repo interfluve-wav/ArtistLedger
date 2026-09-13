@@ -29,16 +29,22 @@ npx esbuild entry.js --bundle --format=iife --platform=browser \
   address), not `{address: ...}` — the SDK's `getContractSchema()` sends a
   dict and gets a psycopg2 error. `app.js` boot() does the raw request with
   a fallback.
-- **No browser wallet needed on studionet.** Studio's 1inch pairing is
-  WalletConnect (QR) — no `window.ethereum` is injected, so "Connect
-  wallet" can't detect it. Studionet writes need **no gas**: a
-  zero-balance generated account successfully submitted `set_api_keys`
-  and `register_artist` (receipt status success, log emitted). The
-  frontend therefore offers a **local account mode** (key generated and
-  kept in localStorage) as the reliable write path; "Connect wallet"
-  remains for browsers that do have an injected provider. The local key
-  is a fresh, **disposable testnet key** — it signs writes only and the
-  header's "Reset key" button wipes it and rotates a new one.
+- **Real wallet connect is the default path.** "Connect" now talks to
+  whatever `window.ethereum` is injected (MetaMask first-class): it adds
+  studionet (chainId 61999) to the wallet, installs the GenLayer snap
+  (`npm:genlayer-wallet-plugin`) so MetaMask understands the chain, and
+  signs `register_artist` with your real account via `eth_sendTransaction`
+  — the SDK client is created WITHOUT an account so its transport routes
+  wallet methods to the provider, and the signer is attached per-call at
+  submit (verified in harness: `eth_sendTransaction` from = wallet, to =
+  consensus contract, 1162-byte calldata envelope). If the snap install is
+  declined, it falls back to a plain EIP-1193 chain-add + sign.
+- **Demo key is the fallback only** when no `window.ethereum` exists
+  (e.g. embedded/portal contexts — Studio's 1inch pairing is
+  WalletConnect QR, which injects no provider). Studionet writes need
+  **no gas**, so a zero-balance generated key (kept in localStorage,
+  plainly marked "demo key · disposable") still works as a local write
+  path for testing. The header's "Reset key" button wipes and rotates it.
 - Reads use `readContract({ jsonSafeReturn: true })`; writes go through
   the active signer (local account or injected provider).
 - `register_artist` can land `UNDETERMINED` on studionet: validators

@@ -1178,6 +1178,7 @@ class ProvenanceRegistry(gl.Contract):
     spotify_client_id: str
     spotify_client_secret: str
     spotify_client_pairs: str  # JSON: [[client_id, secret], ...] — rate-limit pool (str is storage-safe; bare list is not)
+    lastfm_key_pool: str       # JSON: [key, ...] — MUST be a class-level annotation for GenVM to allocate a storage slot (this line was missing → writes executed but never persisted)
 
     def __init__(self):
         """Schema constructor (required by GenVM). API keys default to
@@ -1247,6 +1248,18 @@ class ProvenanceRegistry(gl.Contract):
         (invalid/revoked key) the resolver advances to the next key.
         Empty list clears the pool.
         """
+        cleaned = []
+        if isinstance(keys, str):
+            # CLI sometimes delivers a flat JSON array as a raw string
+            # (arg parsing quirk). Accept it either way.
+            try:
+                parsed = json.loads(keys)
+                if isinstance(parsed, list):
+                    keys = parsed
+                else:
+                    keys = [keys]
+            except Exception:
+                keys = [keys]
         cleaned = [k for k in keys if isinstance(k, str) and k]
         self.lastfm_key_pool = json.dumps(cleaned)
         return f"Last.fm key pool set ({len(cleaned)} keys)"
@@ -1273,6 +1286,16 @@ class ProvenanceRegistry(gl.Contract):
         the pool on failure (401/429); the single pair from set_api_keys
         is the fallback when the pool is empty or exhausted.
         """
+        cleaned = []
+        if isinstance(pairs, str):
+            try:
+                parsed = json.loads(pairs)
+                if isinstance(parsed, list):
+                    pairs = parsed
+                else:
+                    pairs = [pairs]
+            except Exception:
+                pairs = [pairs]
         cleaned = [
             [str(p[0]), str(p[1])] for p in pairs
             if isinstance(p, (list, tuple)) and len(p) >= 2 and p[0] and p[1]

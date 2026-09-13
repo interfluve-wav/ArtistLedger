@@ -153,13 +153,33 @@ function clearLog() { $("loglines").textContent = ""; }
 // ── Wallet / RPC ───────────────────────────────────────────────────────
 // Read client is initialized once at page load so the first rpcRead()
 // doesn't pay the genlayer-js cold-start cost on every call. The write
-// client (with an account attached) is created lazily on first submit,
-// so the "Connect" click only needs to materialize the local signer.
+// client's signer depends on the connect mode:
+//   • REAL wallet (MetaMask / any window.ethereum, default): the client is
+//     created WITHOUT an account so the SDK transport routes wallet methods
+//     (eth_sendTransaction …) to the browser wallet; the actual signer is
+//     attached per-call at submit time as a json-rpc account. The GenLayer
+//     snap (npm:genlayer-wallet-plugin) makes MetaMask understand studionet.
+//   • Demo key (fallback when no browser wallet is installed): a freshly
+//     generated key persisted in localStorage. It only signs testnet writes —
+//     the contract's creator role is fixed at deploy — so it is DISPOSABLE by
+//     design and never reflects a real identity on-chain.
 const LS_KEY = "artistledger.localAccountPk";
 
+// studionet (chainId 61999 = 0xf22f) — used for the manual wallet_addEthereumChain
+// fallback when the snap-based connect() fails (e.g. user declined the snap).
+const STUDIONET_CHAIN_ID_HEX = "0x" + GL.chains.studionet.id.toString(16);
+const STUDIONET_CHAIN_PARAMS = {
+  chainId: STUDIONET_CHAIN_ID_HEX,
+  chainName: "Genlayer Studio Network",
+  nativeCurrency: { name: "GEN Token", symbol: "GEN", decimals: 18 },
+  rpcUrls: ["https://studio.genlayer.com/api"],
+  blockExplorerUrls: ["https://genlayer-explorer.vercel.app"],
+};
+
 let readClient = null;       // pre-warmed on page load
-let writeClient = null;      // created when account is attached
-let account = null;          // genlayer-js account object (post-Connect)
+let writeClient = null;      // created on connect (mode-dependent)
+let account = null;          // demo-key genlayer-js account (real mode keeps this null)
+let walletKind = null;       // "real" | "demo"
 
 function ensureReadClient() {
   if (readClient) return readClient;
@@ -170,19 +190,56 @@ function ensureReadClient() {
 // Warm the read client immediately so the first RPC call is fast.
 try { ensureReadClient(); } catch (e) { /* will retry on first rpcRead */ }
 
-// Local signer: a freshly generated key persisted in localStorage so the demo
-// identity survives reloads. It only signs testnet writes — the contract's
-// creator role is fixed at deploy — so it is DISPOSABLE by design. Plaintext
-// storage means any XSS (the same class of issue the evidence rows guard
-// against with textContent) can steal it; that is acceptable only because the
-// key controls nothing of value. "Reset key" wipes it and rotates a fresh one.
+// Demo-key signer: attaches a locally generated private key (persisted in
+// localStorage so the demo identity survives reloads). Plaintext storage
+// means any XSS can steal it; acceptable only because the key controls
+// nothing of value. "Reset key" wipes it and rotates a fresh one.
 function attachAccount(pk) {
   account = GL.createAccount(pk);
   walletAddr = account.address;
+  walletKind = "demo";
   writeClient = GL.createClient({ chain: GL.chains.studionet, account });
-  $("walletLabel").textContent = shortAddr(walletAddr) + " (local · disposable)";
-  $("walletLabel").title = "Disposable testnet key, stored in browser storage (plaintext). Use Reset key to rotate.";
+  $("walletLabel").textContent = shortAddr(walletAddr) + " (demo key · disposable)";
+  $("walletLabel").title = "Disposable testnet key, stored in browser storage (plaintext). Use Reset key to rotate. Not a real wallet — install MetaMask and Connect again for a real identity.";
   $("localAcctReset").style.display = "inline-flex";
+  checkWalletVerified();
+  document.dispatchEvent(new CustomEvent("wallet-connected"));
+}
+
+// REAL wallet: connects whatever is injected as window.ethereum (MetaMask
+// first-class via the GenLayer snap, any other EIP-1193 wallet works too as
+// long as studionet 61999 is added). The write client is created WITHOUT an
+// account so the SDK routes eth_sendTransaction to the wallet, which pops its
+// own confirm dialog. The signer address is then attached per-call on submit.
+async function connectRealWallet() {
+  const provider = window.ethereum;
+  writeClient = GL.createClient({ chain: GL.chains.studionet }); // no account → wallet signs
+  try {
+    // Official flow: adds studionet to the wallet AND installs the GenLayer
+    // snap (shows a MetaMask approval prompt). If the chain add fails this
+    // throws and we fall through to the manual add below.
+    await writeClient.connect("studionet", "npm");
+    logLine("studionet added to wallet · GenLayer snap installed");
+  } catch (e) {
+    // User declined the snap (or wallet lacks wallet_requestSnaps). The chain
+    // itself may already be added by connect(); re-adding is a silent no-op.
+    try {
+      await provider.request({ method: "wallet_addEthereumChain", params: [STUDIONET_CHAIN_PARAMS] });
+      await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: STUDIONET_CHAIN_ID_HEX }] });
+      logLine("studionet added to wallet (no snap — plain EIP-1193 signing)");
+    } catch (e2) {
+      throw new Error("Could not add studionet (chainId 61999) to your wallet: " + (e2.message || e2));
+    }
+  }
+  const accounts = await provider.request({ method: "eth_requestAccounts" });
+  if (!accounts || !accounts.length) throw new Error("Your wallet returned no accounts.");
+  account = null;
+  walletAddr = accounts[0];
+  walletKind = "real";
+  $("walletLabel").textContent = shortAddr(walletAddr) + " (MetaMask · real)";
+  $("walletLabel").title = walletAddr + "\nReal wallet — signs via MetaMask + GenLayer snap on studionet (chainId 61999).";
+  $("localAcctReset").style.display = "none";
+  logLine("connected real wallet " + shortAddr(walletAddr) + " on studionet");
   checkWalletVerified();
   document.dispatchEvent(new CustomEvent("wallet-connected"));
 }
@@ -249,28 +306,58 @@ function renderVerifiedCert(artist) {
   }
 }
 
-$("localAcctBtn").addEventListener("click", () => {
+$("localAcctBtn").addEventListener("click", async () => {
   try {
-    let pk = localStorage.getItem(LS_KEY);
-    if (!pk) {
-      pk = GL.generatePrivateKey();
-      localStorage.setItem(LS_KEY, pk);
-      logLine("new disposable local key generated and saved in browser storage");
+    if (window.ethereum && typeof window.ethereum.request === "function") {
+      await connectRealWallet();
+    } else {
+      logLine("no browser wallet (window.ethereum) — falling back to the disposable demo key");
+      let pk = localStorage.getItem(LS_KEY);
+      if (!pk) {
+        pk = GL.generatePrivateKey();
+        localStorage.setItem(LS_KEY, pk);
+        logLine("new disposable demo key generated and saved in browser storage");
+      }
+      attachAccount(pk);
     }
-    attachAccount(pk);
   } catch (e) {
-    $("walletLabel").textContent = "Local account failed: " + (e.message || e);
+    $("walletLabel").textContent = "Connect failed: " + (e.message || e);
+    logLine("[err] connect: " + (e.message || e));
   }
 });
 
 // Wipe + rotate immediately so the leaked key dies now, not on next connect.
+// (Demo mode only — real wallets manage their own keys.)
 $("localAcctReset").addEventListener("click", () => {
   localStorage.removeItem(LS_KEY);
   const fresh = GL.generatePrivateKey();
   localStorage.setItem(LS_KEY, fresh);
   attachAccount(fresh);
-  logLine("previous local key wiped; rotated a fresh disposable key");
+  logLine("previous demo key wiped; rotated a fresh disposable key");
 });
+
+// Follow the user's wallet: account switch updates identity, chain switch
+// away from studionet is flagged before submit.
+if (window.ethereum && typeof window.ethereum.on === "function") {
+  window.ethereum.on("accountsChanged", (accs) => {
+    if (walletKind !== "real") return;
+    if (!accs || !accs.length) {
+      walletAddr = null; walletKind = null;
+      $("walletLabel").textContent = "Disconnected";
+      logLine("wallet disconnected");
+      return;
+    }
+    walletAddr = accs[0];
+    $("walletLabel").textContent = shortAddr(walletAddr) + " (MetaMask · real)";
+    logLine("wallet switched account to " + shortAddr(walletAddr));
+    checkWalletVerified();
+  });
+  window.ethereum.on("chainChanged", (hex) => {
+    if (walletKind === "real" && parseInt(hex, 16) !== GL.chains.studionet.id) {
+      logLine("wallet is on chain " + parseInt(hex, 16) + " — switch back to studionet (61999) before submitting");
+    }
+  });
+}
 
 async function rpcRead(fnName, args) {
   const c = ensureReadClient();
@@ -877,7 +964,17 @@ $("submitBtn").onclick = async () => {
   ];
 
   try {
-    const tx = await writeClient.writeContract({ address: CONTRACT, functionName: "register_artist", args, value: 0n, leaderOnly: false });
+    const callOpts = { address: CONTRACT, functionName: "register_artist", args, value: 0n, leaderOnly: false };
+    if (walletKind === "real") {
+      // Real-wallet mode: no client-level account (the SDK would otherwise
+      // sign locally) — the connected wallet signs via eth_sendTransaction
+      // and pops its own confirm dialog.
+      callOpts.account = { type: "json-rpc", address: walletAddr };
+      logLine("[02] Waiting for the wallet to sign (check the MetaMask popup)…");
+    } else {
+      logLine("[02] Signing with the attached demo key…");
+    }
+    const tx = await writeClient.writeContract(callOpts);
     logLine("[02] Submitted tx " + tx.slice(0, 14) + "…");
     $("verify-status").innerHTML = "<b>Waiting for consensus…</b> (4 validators re-derive the score)";
     $("live-badge").textContent = "PENDING";
