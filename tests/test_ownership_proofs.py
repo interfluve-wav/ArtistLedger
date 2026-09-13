@@ -103,17 +103,17 @@ class TestOwnershipScoring:
     def test_no_proofs_zero_points(self):
         assert prov._score_evidence(self._ev(), "X") >= 0
 
-    def test_single_proof_adds_12(self):
+    def test_single_proof_adds_25(self):
         ev = self._ev(ownership_proof_soundcloud=True)
         base = prov._score_evidence(prov.Evidence.empty(), "X")
         assert prov._score_evidence(ev, "X") == base + prov.W_OWNERSHIP_PROOF
 
-    def test_two_proofs_add_24(self):
+    def test_two_proofs_add_50(self):
         ev = self._ev(ownership_proof_soundcloud=True, ownership_proof_youtube=True)
         base = prov._score_evidence(prov.Evidence.empty(), "X")
-        assert prov._score_evidence(ev, "X") == base + 24
+        assert prov._score_evidence(ev, "X") == base + 50
 
-    def test_four_proofs_capped_at_24(self):
+    def test_four_proofs_capped_at_50(self):
         ev = self._ev(
             ownership_proof_soundcloud=True, ownership_proof_lastfm=True,
             ownership_proof_bandcamp=True, ownership_proof_youtube=True,

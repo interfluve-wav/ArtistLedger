@@ -225,10 +225,14 @@ W_WALLET_AGE: int = 5
 W_WALLET_NAME: int = 5
 W_LLM_ADJUSTMENT_RANGE: int = 5
 # Ownership proofs (Tier 2.6): artist-controlled token on their own
-# profile. Each confirmed channel is worth W_OWNERSHIP_PROOF, capped at
-# TWO confirmed channels (W_OWNERSHIP_CAP) so one dedicated scammer with
-# N accounts can't out-score a real artist with two clean proofs.
-W_OWNERSHIP_PROOF: int = 12
+# profile. This is the STRONGEST identity signal in the contract — it
+# proves control of the public profiles of the claimed identity, which
+# no audio fingerprint or catalog binding can. Valued accordingly:
+# W_OWNERSHIP_PROOF per confirmed channel, capped at TWO channels
+# (W_OWNERSHIP_CAP) so one dedicated scammer with N accounts can't
+# out-score a real artist — but two real proofs alone clear the 70
+# threshold (50 + baseline 5 + tier-2 corroboration).
+W_OWNERSHIP_PROOF: int = 25
 W_OWNERSHIP_CAP: int = 2
 # Last.fm ownership-proof maturity floor: an account below this lifetime
 # scrobble count is "fresh" — its token doesn't count as ownership proof.
