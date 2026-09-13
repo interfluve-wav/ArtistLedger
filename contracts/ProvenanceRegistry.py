@@ -1162,6 +1162,11 @@ class ProvenanceRegistry(gl.Contract):
     identity_score: TreeMap[Address, u256]
     identity_count: TreeMap[Address, u256]
     artist_releases: TreeMap[Address, DynArray[bytes]]
+    # Identity index — one artist = one wallet. Maps the stable ownership
+    # token (and canonical name) to the wallet that first verified, so a
+    # second wallet re-validating the same person is detected and rejected.
+    verified_by_token: TreeMap[str, str]   # ALVERIFY token -> wallet addr
+    verified_by_name: TreeMap[str, str]    # canonical (lowercase) name -> wallet addr
 
     # API credentials. Set by `set_api_keys` before the first
     # `register_artist` call. All four are read inside `run_nondet_unsafe`
@@ -1291,6 +1296,41 @@ class ProvenanceRegistry(gl.Contract):
 
     # ─── Identity verification ─────────────────────────────────────────────
 
+    @gl.public.view
+    def get_verified_by_token(self, token: str) -> dict:
+        """Given an ALVERIFY token, return the wallet that validated with it
+        (and whether that artist is still certified). Empty result = fresh."""
+        owner = self.verified_by_token.get(token, "")
+        if not owner:
+            return {"found": False}
+        artist = self.artists.get(owner)
+        return {
+            "found": True,
+            "wallet": owner,
+            "name": artist.name if artist else "",
+            "score": int(artist.score) if artist else 0,
+            "verified": bool(artist and artist.score >= VERIFICATION_THRESHOLD and artist.verified_at > u256(0)),
+            "verified_at": int(artist.verified_at) if artist else 0,
+        }
+
+    @gl.public.view
+    def get_verified_by_name(self, name: str) -> dict:
+        """Given an artist name, return the wallet that validated it (first
+        registrant wins). Empty result = the name is free."""
+        canon = name.strip().lower()
+        owner = self.verified_by_name.get(canon, "")
+        if not owner:
+            return {"found": False}
+        artist = self.artists.get(owner)
+        return {
+            "found": True,
+            "wallet": owner,
+            "name": artist.name if artist else canon,
+            "score": int(artist.score) if artist else 0,
+            "verified": bool(artist and artist.score >= VERIFICATION_THRESHOLD and artist.verified_at > u256(0)),
+            "verified_at": int(artist.verified_at) if artist else 0,
+        }
+
     @gl.public.write
     def register_artist(
         self,
@@ -1321,7 +1361,25 @@ class ProvenanceRegistry(gl.Contract):
         claimed sources independently match, the score is capped at 5 (below
         the 70 threshold), so registration is effectively rejected at
         consensus. Set False for a relaxed single-source onboarding path.
+
+        Identity dedup (one artist = one wallet): BEFORE any evidence work,
+        if this ownership token or canonical name is already validated under
+        a DIFFERENT wallet, registration is rejected. Same wallet can always
+        re-register (updates the record; no double validation of the same
+        person from a second wallet).
         """
+        # ── Identity dedup gate (cheap, runs before the consensus work) ────
+        sender = self._sender()
+        canon_name = name.strip().lower()
+        if ownership_token:
+            existing = self.verified_by_token.get(ownership_token, "")
+            if existing and str(existing).lower() != str(sender).lower():
+                return f"Already validated under {existing} — use your original wallet (no double validation)"
+        if canon_name:
+            existing = self.verified_by_name.get(canon_name, "")
+            if existing and str(existing).lower() != str(sender).lower():
+                return f"Artist '{name}' already validated under {existing} — use your original wallet (no double validation)"
+
         def leader_collect() -> Evidence:
             # Read API credentials from contract storage once. Inside
             # run_nondet_unsafe, all validators see the same stored
@@ -1560,6 +1618,11 @@ class ProvenanceRegistry(gl.Contract):
                 ),
                 require_two_source=require_two_source,
             )
+            # Index the identity so future wallets can't double-validate.
+            if ownership_token:
+                self.verified_by_token[ownership_token] = str(sender)
+            if canon_name:
+                self.verified_by_name[canon_name] = str(sender)
             return f"Verified ({score})"
 
         return f"Not verified ({score})"

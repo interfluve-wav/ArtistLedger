@@ -184,6 +184,7 @@ function attachAccount(pk) {
   $("walletLabel").title = "Disposable testnet key, stored in browser storage (plaintext). Use Reset key to rotate.";
   $("localAcctReset").style.display = "inline-flex";
   checkWalletVerified();
+  document.dispatchEvent(new CustomEvent("wallet-connected"));
 }
 
 // If this wallet's artist is already certified on-chain, collapse the
@@ -746,17 +747,34 @@ const OWN_PLATFORMS = [
 ];
 let ownToken = "";
 
+// Stable ownership token: ALVERIFY-<hash(wallet + artist)>. Deterministic
+// per person — the SAME token across page loads, sessions, and claims, so
+// the artist pastes it once into their bios and it never drifts. The
+// random-per-load scheme caused real failures (bios carried an old token
+// while the page submitted a fresh one → no match). Falls back to a
+// session-stable random token before a wallet connects.
 function genOwnershipToken() {
-  // ALVERIFY-<16 random base32>-<unix hour> — hour granularity makes the
-  // token stable across page reloads in the same session but unique per claim.
   const abc = "ABCDEFGHJKMNPQRSTVWXYZ23456789";
+  const src = (walletAddr || "anon") + ":" + ($("f-name").value.trim() || "");
+  // FNV-1a 32-bit → 8 base32 chars (crypto-stable, no randomness)
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < src.length; i++) {
+    h ^= src.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
   let rnd = "";
-  const arr = new Uint8Array(16);
-  crypto.getRandomValues(arr);
-  for (const b of arr) rnd += abc[b % abc.length];
-  ownToken = `ALVERIFY-${rnd}-${Math.floor(Date.now() / 3600000)}`;
+  let v = h >>> 0;
+  for (let i = 0; i < 8; i++) { rnd += abc[v % 32]; v = Math.floor(v / 32); }
+  // suffix = day bucket (86400s), stable for 24h so pasted bios don't expire
+  ownToken = `ALVERIFY-${rnd}-${Math.floor(Date.now() / 86400000)}`;
   $("own-token").value = ownToken;
   return ownToken;
+}
+
+// Re-derive (not regenerate) whenever the wallet or artist name changes —
+// the token only changes when the identity does.
+function refreshOwnershipToken() {
+  genOwnershipToken();
 }
 
 function ownershipProofsDict() {
@@ -811,8 +829,18 @@ function initOwnershipUI() {
     try { await navigator.clipboard.writeText(ownToken); $("own-copy").textContent = "Copied ✓";
       setTimeout(() => ($("own-copy").textContent = "Copy"), 1600); } catch {}
   };
-  $("own-regen").onclick = () => genOwnershipToken();
+  // "Regenerate" now means re-derive for the CURRENT identity — deterministic,
+  // same token every time. A different token only appears for a different
+  // wallet or artist name (the identity changed).
+  $("own-regen").onclick = () => { refreshOwnershipToken(); logLine("token re-derived for " + shortAddr(walletAddr || "anon")); };
   $("own-add").onclick = () => addOwnRow();
+  // Token follows the identity: wallet connect + artist name edits re-derive it.
+  document.addEventListener("wallet-connected", refreshOwnershipToken);
+  const nameInput = $("f-name");
+  if (nameInput) {
+    nameInput.addEventListener("change", refreshOwnershipToken);
+    nameInput.addEventListener("input", () => { if (ownToken) refreshOwnershipToken(); });
+  }
   // empty by default; user opts in
 }
 

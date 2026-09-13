@@ -764,3 +764,63 @@ def test_mint_token_returns_empty_on_bad_creds():
     from contracts.ProvenanceRegistry import _spotify_mint_token
     tok = _spotify_mint_token("bad-client-id", "bad-secret")
     assert tok == ""
+
+
+# ─── Identity dedup: one artist = one wallet ─────────────────────────────
+
+def test_different_wallet_blocked_by_token(contract):
+    contract._sender = lambda: "0xWalletA"
+    contract.verified_by_token["ALVERIFY-TEST-1"] = "0xWalletB"
+    out = contract.register_artist(
+        "did:web:test", "Test Artist", b"\x02" * 32, {},
+        "0xWalletB", "lastfm", "handle", "soundcloud", "sc",
+        False, "ALVERIFY-TEST-1", {},
+    )
+    assert "Already validated under 0xWalletB" in out
+
+
+def test_different_wallet_blocked_by_name(contract):
+    contract._sender = lambda: "0xWalletA"
+    contract.verified_by_name["test artist"] = "0xWalletB"
+    out = contract.register_artist(
+        "did:web:test", "Test Artist", b"\x03" * 32, {},
+        "0xWalletB", "lastfm", "h", "soundcloud", "sc",
+        False, "", {},
+    )
+    assert "already validated under" in out.lower()
+    assert "0xWalletB" in out  # address kept intact (case-insensitive hex)
+
+
+def test_same_wallet_not_blocked(contract, monkeypatch):
+    contract._sender = lambda: "0xWalletA"
+    contract.verified_by_name["test artist"] = "0xWalletA"
+    contract.verified_by_token["ALVERIFY-TEST-2"] = "0xWalletA"
+    # same wallet → gate passes; evidence collection is mocked (existing
+    # pattern) so the test only proves the gate does NOT block.
+    monkeypatch.setattr("contracts.ProvenanceRegistry._acoustid_lookup", lambda a, k: (False, ""))
+    monkeypatch.setattr("contracts.ProvenanceRegistry._musicbrainz_isrc", lambda m: [])
+    monkeypatch.setattr("contracts.ProvenanceRegistry._spotify_search", lambda n, t: {})
+    monkeypatch.setattr("contracts.ProvenanceRegistry._llm_qualitative_adjustment", lambda n, s: 0)
+    # same wallet → gate passes; proceeds to evidence (mock fails → no crash)
+    out = contract.register_artist(
+        "did:web:test", "Test Artist", b"\x04" * 32, {},
+        "0xWalletA", "lastfm", "h", "soundcloud", "sc",
+        False, "ALVERIFY-TEST-2", {},
+    )
+    assert "Already validated" not in out
+
+
+def test_get_verified_by_token_lookup(contract):
+    contract.verified_by_token["ALVERIFY-LOOKUP-1"] = "0xWalletC"
+    r = contract.get_verified_by_token("ALVERIFY-LOOKUP-1")
+    assert r["found"] is True
+    assert r["wallet"] == "0xWalletC"
+    assert contract.get_verified_by_token("ALVERIFY-NOPE")["found"] is False
+
+
+def test_get_verified_by_name_lookup(contract):
+    contract.verified_by_name["squarepusher"] = "0xWalletD"
+    r = contract.get_verified_by_name("SquarePusher")  # case-insensitive
+    assert r["found"] is True
+    assert r["wallet"] == "0xWalletD"
+    assert contract.get_verified_by_name("nobody")["found"] is False
