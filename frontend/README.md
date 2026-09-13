@@ -36,7 +36,9 @@ npx esbuild entry.js --bundle --format=iife --platform=browser \
   and `register_artist` (receipt status success, log emitted). The
   frontend therefore offers a **local account mode** (key generated and
   kept in localStorage) as the reliable write path; "Connect wallet"
-  remains for browsers that do have an injected provider.
+  remains for browsers that do have an injected provider. The local key
+  is a fresh, **disposable testnet key** — it signs writes only and the
+  header's "Reset key" button wipes it and rotates a new one.
 - Reads use `readContract({ jsonSafeReturn: true })`; writes go through
   the active signer (local account or injected provider).
 - `register_artist` can land `UNDETERMINED` on studionet: validators

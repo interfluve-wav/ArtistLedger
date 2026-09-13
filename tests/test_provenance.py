@@ -84,6 +84,7 @@ def source_urls():
 def make_evidence(
     acoustid=True, mbid="abc-123", isrcs=None,
     spotify_id="spotify123", spotify_verified=True,
+    spotify_name_matched=True,
     spotify_followers=5000, spotify_popularity=45,
     apple_id="apple123", apple_track=True,
     bandcamp="skeemask", bandcamp_real="Skee Mask", bandcamp_loc="Berlin",
@@ -104,6 +105,7 @@ def make_evidence(
         isrc_codes=isrc_dyn,
         spotify_artist_id=spotify_id,
         spotify_verified=spotify_verified,
+        spotify_name_matched=spotify_name_matched,
         spotify_followers=u256(spotify_followers),
         spotify_popularity=u256(spotify_popularity),
         apple_music_artist_id=apple_id,

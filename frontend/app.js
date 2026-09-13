@@ -173,17 +173,42 @@ function ensureReadClient() {
 // Warm the read client immediately so the first RPC call is fast.
 try { ensureReadClient(); } catch (e) { /* will retry on first rpcRead */ }
 
+// Local signer: a freshly generated key persisted in localStorage so the demo
+// identity survives reloads. It only signs testnet writes — the contract's
+// creator role is fixed at deploy — so it is DISPOSABLE by design. Plaintext
+// storage means any XSS (the same class of issue the evidence rows guard
+// against with textContent) can steal it; that is acceptable only because the
+// key controls nothing of value. "Reset key" wipes it and rotates a fresh one.
+function attachAccount(pk) {
+  account = GL.createAccount(pk);
+  walletAddr = account.address;
+  writeClient = GL.createClient({ chain: GL.chains.studionet, account });
+  $("walletLabel").textContent = shortAddr(walletAddr) + " (local · disposable)";
+  $("walletLabel").title = "Disposable testnet key, stored in browser storage (plaintext). Use Reset key to rotate.";
+  $("localAcctReset").style.display = "inline-flex";
+}
+
 $("localAcctBtn").addEventListener("click", () => {
   try {
     let pk = localStorage.getItem(LS_KEY);
-    if (pk) { account = GL.createAccount(pk); }
-    else { pk = GL.generatePrivateKey(); account = GL.createAccount(pk); localStorage.setItem(LS_KEY, pk); }
-    walletAddr = account.address;
-    writeClient = GL.createClient({ chain: GL.chains.studionet, account });
-    $("walletLabel").textContent = shortAddr(walletAddr) + " (local)";
+    if (!pk) {
+      pk = GL.generatePrivateKey();
+      localStorage.setItem(LS_KEY, pk);
+      logLine("new disposable local key generated and saved in browser storage");
+    }
+    attachAccount(pk);
   } catch (e) {
     $("walletLabel").textContent = "Local account failed: " + (e.message || e);
   }
+});
+
+// Wipe + rotate immediately so the leaked key dies now, not on next connect.
+$("localAcctReset").addEventListener("click", () => {
+  localStorage.removeItem(LS_KEY);
+  const fresh = GL.generatePrivateKey();
+  localStorage.setItem(LS_KEY, fresh);
+  attachAccount(fresh);
+  logLine("previous local key wiped; rotated a fresh disposable key");
 });
 
 async function rpcRead(fnName, args) {

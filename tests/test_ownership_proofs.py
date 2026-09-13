@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "contracts"))
 # Import the contract module without GenLayer runtime: the module imports
 # `gl` at top-level, so stub it minimally for the pure helpers we test.
 import types
+import json
 gl_stub = types.ModuleType("gl")
 gl_stub.nondet = types.SimpleNamespace(
     web=types.SimpleNamespace(get=lambda url: None),
@@ -192,3 +193,131 @@ class TestEvidenceRoundtrip:
         d = ev.to_dict()
         assert d["ownership_proof_soundcloud"] is True
         assert "ownership_lastfm_scrobbles" in d
+
+
+class TestLastfmResolveArtist:
+    """artist.search → canonical-name resolution (requires api key; mocked)."""
+
+    def _search_response(self, name, mbid):
+        return {
+            "results": {
+                "artistmatches": {
+                    "artist": [{"name": name, "mbid": mbid}]
+                }
+            }
+        }
+
+    def test_resolves_canonical_name(self):
+        """'fred again..' → canonical 'Fred Again...' when MBID present."""
+        orig = prov.gl.nondet.web.get
+        prov.gl.nondet.web.get = lambda url: types.SimpleNamespace(
+            body=json.dumps(self._search_response("Fred Again...", "1234-5678")).encode()
+        )
+        try:
+            assert prov._lastfm_resolve_artist("fred again..", "key") == "Fred Again..."
+        finally:
+            prov.gl.nondet.web.get = orig
+
+    def test_no_key_returns_empty(self):
+        assert prov._lastfm_resolve_artist("Cher", "") == ""
+        assert prov._lastfm_resolve_artist("", "key") == ""
+
+    def test_no_mbid_rejected(self):
+        """A match without an MBID is a vanity/unregistered page — reject."""
+        orig = prov.gl.nondet.web.get
+        prov.gl.nondet.web.get = lambda url: types.SimpleNamespace(
+            body=json.dumps(self._search_response("Cher", "")).encode()
+        )
+        try:
+            assert prov._lastfm_resolve_artist("Cher", "key") == ""
+        finally:
+            prov.gl.nondet.web.get = orig
+
+    def test_no_matches_returns_empty(self):
+        orig = prov.gl.nondet.web.get
+        prov.gl.nondet.web.get = lambda url: types.SimpleNamespace(
+            body=json.dumps({"results": {"artistmatches": {"artist": []}}}).encode()
+        )
+        try:
+            assert prov._lastfm_resolve_artist("NoSuchArtistZzz", "key") == ""
+        finally:
+            prov.gl.nondet.web.get = orig
+
+    def test_scrobbles_uses_canonical_name(self):
+        """_lastfm_scrobbles resolves then queries getInfo with canonical."""
+        calls = []
+        def fake_get(url):
+            calls.append(url)
+            if "artist.search" in url:
+                body = json.dumps({
+                    "results": {"artistmatches": {"artist": [{"name": "Aphex Twin", "mbid": "abcd"}]}}
+                })
+            else:  # artist.getInfo
+                body = json.dumps({"artist": {"stats": {"userplaycount": 42}}})
+            return types.SimpleNamespace(body=body.encode())
+        orig = prov.gl.nondet.web.get
+        prov.gl.nondet.web.get = fake_get
+        try:
+            n = prov._lastfm_scrobbles("APHEX TWIN", "listener", "key")
+        finally:
+            prov.gl.nondet.web.get = orig
+        assert n == 42
+        assert any("artist.search" in u and "APHEX TWIN" in u for u in calls)
+        assert any("artist.getInfo" in u and "Aphex Twin" in u for u in calls)
+
+
+class TestLastfmPageParsing:
+    """Parse the real Last.fm profile markup (fixture captured 2026-09-12).
+
+    The page carries a trap: a tooltip "an average of 17 scrobbles per day!"
+    that a naive /N scrobbles?/ regex matches FIRST. The parser must anchor
+    on the Scrobbles header + /user/X/library link instead.
+    """
+
+    FIXTURE = (
+        '<li class="header-metadata-item"> <h4 class="header-metadata-title"> '
+        'Scrobbles </h4> <div class=" header-metadata-display "> '
+        '<p title="That&#39;s an average of 17 scrobbles per day!" >'
+        '<a href="/user/RJ/library" >151,481</a>'
+    )
+
+    def test_parses_real_fixture(self):
+        body = self.FIXTURE
+        # exercise via a stubbed _http_get: the function reads the URL argument
+        # through gl.nondet.web.get — patch the stub to return the fixture.
+        orig = prov.gl.nondet.web.get
+        prov.gl.nondet.web.get = lambda url: types.SimpleNamespace(body=self.FIXTURE.encode())
+        try:
+            _, scrobbles = prov._lastfm_profile_and_scrobbles("RJ", "")
+        finally:
+            prov.gl.nondet.web.get = orig
+        assert scrobbles == 151481
+
+    def test_parses_full_live_capture(self):
+        """Full real page (captured 2026-09-12, 456KB) — regression guard."""
+        import os
+        path = os.path.join(os.path.dirname(__file__), "fixtures", "lastfm_profile_rj.html")
+        with open(path, encoding="utf-8") as f:
+            html = f.read()
+        orig = prov.gl.nondet.web.get
+        prov.gl.nondet.web.get = lambda url: types.SimpleNamespace(body=html.encode())
+        try:
+            _, scrobbles = prov._lastfm_profile_and_scrobbles("RJ", "")
+        finally:
+            prov.gl.nondet.web.get = orig
+        assert scrobbles == 151481
+
+    def test_tooltip_trap_not_matched(self):
+        """A page whose only 'N scrobbles' occurrence is the avg/day tooltip
+        (no library link) must yield 0 — NOT '17'."""
+        trap_only = self.FIXTURE.split('<a href="/user/RJ/library"')[0] + "</div>"
+        orig = prov.gl.nondet.web.get
+        prov.gl.nondet.web.get = lambda url: types.SimpleNamespace(body=trap_only.encode())
+        try:
+            _, scrobbles = prov._lastfm_profile_and_scrobbles("RJ", "")
+        finally:
+            prov.gl.nondet.web.get = orig
+        assert scrobbles == 0
+
+    def test_empty_handle_returns_zero(self):
+        assert prov._lastfm_profile_and_scrobbles("", "") == ("", 0)

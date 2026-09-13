@@ -88,6 +88,7 @@ class Evidence:
     isrc_codes: DynArray[str]            # any present = full 10 pts
     spotify_artist_id: str
     spotify_verified: bool
+    spotify_name_matched: bool           # top search hit binds to claimed name
     spotify_followers: u256
     spotify_popularity: u256             # 0-100
     apple_music_artist_id: str
@@ -169,6 +170,7 @@ class Evidence:
             isrc_codes=[],
             spotify_artist_id="",
             spotify_verified=False,
+            spotify_name_matched=False,
             spotify_followers=u256(0),
             spotify_popularity=u256(0),
             apple_music_artist_id="",
@@ -302,14 +304,24 @@ def _musicbrainz_artist(name: str) -> dict:
 
 
 def _spotify_search(name: str, spotify_token: str) -> dict:
-    """Search Spotify for an artist. Returns top match or {}."""
+    """Search Spotify for an artist. Returns top match or {}.
+
+    NOTE (Feb-2026 API change): `followers` and `popularity` were removed
+    from artist responses for dev-mode apps. Product code must not rely on
+    them; the caller binds via `name` overlap instead. Extended-quota keys
+    still receive the fields, so keep parsing them when present.
+    """
     headers = {"Authorization": f"Bearer {spotify_token}"}
     url = f"{SPOTIFY_SEARCH_URL}?q=artist:{name}&type=artist&limit=1"
     try:
         resp = gl.nondet.web.get(url, headers=headers)
         data = json.loads(resp.body.decode("utf-8", errors="replace"))
         items = data.get("artists", {}).get("items", [])
-        return items[0] if items else {}
+        if not items:
+            return {}
+        top = items[0]
+        top["_name_matched"] = _name_token_overlap(top.get("name", ""), name) >= 0.5
+        return top
     except Exception:
         return {}
 
@@ -731,6 +743,37 @@ def _spotify_artist_id(raw: str) -> str:
     return ""
 
 
+def _lastfm_resolve_artist(artist: str, lastfm_key: str) -> str:
+    """Resolve a claimed artist name to Last.fm's canonical name via artist.search.
+
+    `artist.getInfo` requires the exact canonical name — a raw user-typed
+    "fred again.." yields 0 userplaycount even for a real fan. The search
+    endpoint returns the top match's canonical name + MBID, which we then
+    feed back into getInfo. Requires the API key; empty key → "" (no
+    signal, caller treats as 0).
+    """
+    if not artist or not lastfm_key:
+        return ""
+    try:
+        url = (
+            f"https://ws.audioscrobbler.com/2.0/?method=artist.search"
+            f"&artist={artist}&limit=1&api_key={lastfm_key}&format=json"
+        )
+        data = _http_get_json(url)
+        matches = (data or {}).get("results", {}).get("artistmatches", {}).get("artist", [])
+        if not matches:
+            return ""
+        name = matches[0].get("name", "")
+        mbid = matches[0].get("mbid", "")
+        # strong binding: MBID present means it's a tracked Last.fm artist,
+        # not a vanity page — accept the canonical name
+        if name and mbid:
+            return name
+        return ""
+    except Exception:
+        return ""
+
+
 def _lastfm_scrobbles(artist: str, lastfm_user: str, lastfm_key: str) -> int:
     """Return scrobble count for an artist in a Last.fm user's history."""
     if not lastfm_user or not artist:
@@ -738,9 +781,13 @@ def _lastfm_scrobbles(artist: str, lastfm_user: str, lastfm_key: str) -> int:
     if not lastfm_key:
         return 0
     api_key = lastfm_key
+    # resolve to the canonical name first — see _lastfm_resolve_artist
+    canonical = _lastfm_resolve_artist(artist, api_key)
+    if not canonical:
+        return 0
     url = (
         f"https://ws.audioscrobbler.com/2.0/?method=artist.getInfo"
-        f"&artist={artist}&username={lastfm_user}&api_key={api_key}&format=json"
+        f"&artist={canonical}&username={lastfm_user}&api_key={api_key}&format=json"
     )
     data = _http_get_json(url)
     try:
@@ -789,22 +836,39 @@ def _soundcloud_bio(handle: str) -> str:
 def _lastfm_profile_and_scrobbles(handle: str, lastfm_key: str) -> tuple[str, int]:
     """Fetch a Last.fm user page: returns (bio_html, lifetime_scrobbles).
 
-    Lifetime scrobble count comes from the user profile page (embedded
-    JSON `scrobbles` field) — it's the account-maturity signal: a brand
-    new sybil account has ~0 scrobbles regardless of what their bio says.
+    Lifetime scrobble count comes from the user profile page — it's the
+    account-maturity signal: a brand new sybil account has ~0 scrobbles
+    regardless of what their bio says.
+
+    Parsing (validated against live page 2026-09-12): the count lives in
+    a bare `<p>` right after the `Scrobbles` header-metadata-title, e.g.
+    `<h4 ...>Scrobbles</h4> <p>151,481</p>`. The old "N scrobbles" text
+    pattern is a trap: the page also renders an *average per day* tooltip
+    ("an average of 17 scrobbles per day!") that would match first and
+    report 17 instead of 151,481. We anchor on the header and grab the
+    next number, and verify against the `Scrobbles` label specifically.
     """
     if not handle:
         return "", 0
     try:
+        import re  # GenVM: keep imports at call time (matches _regex_first)
         body = _http_get(f"https://www.last.fm/user/{handle}")
-        scrobbles_str = _regex_any(body, (
-            r'"scrobbles"\s*:\s*{\s*"count"\s*:\s*(\d+)',
-            r'([\d,]+)\s*scrobbles?',
-        ))
-        try:
-            scrobbles = int(scrobbles_str.replace(",", "")) if scrobbles_str else 0
-        except ValueError:
-            scrobbles = 0
+        scrobbles = 0
+        # Anchor: <h4 ...>Scrobbles</h4> <div ...> <p title="avg/day tooltip">
+        # <a href="/user/{handle}/library">151,481</a>. The count is the
+        # number inside the library link that follows the Scrobbles label.
+        # DO NOT match "N scrobbles" generally — the tooltip title renders
+        # "an average of 17 scrobbles per day!" and would match first.
+        m = re.search(
+            r'header-metadata-title">\s*Scrobbles\s*</h4>(.*?)'
+            r'library"\s*>\s*([\d,]{4,})\s*</a>',
+            body, re.S,
+        )
+        if m and m.group(2):
+            try:
+                scrobbles = int(m.group(2).replace(",", ""))
+            except ValueError:
+                scrobbles = 0
         return body, scrobbles
     except Exception:
         return "", 0
@@ -945,10 +1009,13 @@ def _score_evidence(ev, claimed_name: str) -> int:
         score += W_ACOUSTID
     if len(_ev_get(ev, "isrc_codes", []) or []) > 0:
         score += W_ISRC
-    # Spotify: 10 if verified OR (popularity >= 20 AND followers >= 1000)
+    # Spotify: 10 if verified OR name-bound (top hit matches claimed name).
+    # popularity/followers thresholds are kept for extended-quota keys that
+    # still get those fields (Feb-2026 API removed them for dev-mode apps).
     sp_id = _ev_get(ev, "spotify_artist_id", "")
     if sp_id and (
         _ev_get(ev, "spotify_verified", False)
+        or _ev_get(ev, "spotify_name_matched", False)
         or (int(_ev_get(ev, "spotify_popularity", 0)) >= 20
             and int(_ev_get(ev, "spotify_followers", 0)) >= 1000)
     ):
@@ -1152,8 +1219,9 @@ class ProvenanceRegistry(gl.Contract):
             if sp:
                 ev.spotify_artist_id = sp.get("id", "")
                 ev.spotify_verified = bool(sp.get("verified", False))
-                ev.spotify_followers = u256(int(sp.get("followers", {}).get("total", 0)))
-                ev.spotify_popularity = u256(int(sp.get("popularity", 0)))
+                ev.spotify_name_matched = bool(sp.get("_name_matched", False))
+                ev.spotify_followers = u256(int(sp.get("followers", {}).get("total", 0) or 0))
+                ev.spotify_popularity = u256(int(sp.get("popularity", 0) or 0))
 
             title_hint = source_urls.get("release_title", "")
             apple_id, track_present = _apple_music_search(name, title_hint)
@@ -1284,9 +1352,9 @@ class ProvenanceRegistry(gl.Contract):
                 press = int(leader_dict.get("press_narrative_score", 0) or 0)
                 if press < -5 or press > 5:
                     return False
-                # A verified flag with zero followers/popularity is a
-                # fabrication red flag (Spotify requires activity).
-                if leader_dict.get("spotify_verified") and followers <= 0:
+                # A verified flag without a resolved artist id is impossible
+                # (verified is only set when the artist lookup returns).
+                if leader_dict.get("spotify_verified") and not leader_dict.get("spotify_artist_id"):
                     return False
                 # bandcamp_handle must not be empty if claimed in source_urls.
                 if source_urls.get("bandcamp") and not leader_dict.get("bandcamp_handle"):
@@ -1586,6 +1654,7 @@ def _score_evidence_from_dict(d: dict, name: str) -> int:
             isrc_codes=isrc_codes,
             spotify_artist_id=d.get("spotify_artist_id", ""),
             spotify_verified=bool(d.get("spotify_verified", False)),
+            spotify_name_matched=bool(d.get("spotify_name_matched", False)),
             spotify_followers=u256(int(d.get("spotify_followers", 0))),
             spotify_popularity=u256(int(d.get("spotify_popularity", 0))),
             apple_music_artist_id=d.get("apple_music_artist_id", ""),

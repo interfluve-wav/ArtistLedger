@@ -509,7 +509,8 @@
         <span class="net-chip"><span class="dot" id="rpcDot"></span><b id="rpcStatus">connecting…</b></span>
         <span class="net-chip contract-chip">contract <b>0x703AdAB…4384</b> · v0.3.4</span>
         <span id="walletLabel"></span>
-        <button class="btn ghost" id="localAcctBtn" style="padding:7px 14px;font-size:11px">Connect</button>
+        <button class="btn ghost" id="localAcctBtn" style="padding:7px 14px;font-size:11px" title="Create or load the local signer. The key is stored in browser storage (plaintext) and only signs testnet writes — treat it as disposable; use Reset to rotate.">Connect</button>
+        <button class="btn ghost" id="localAcctReset" style="padding:7px 14px;font-size:11px;display:none" title="Wipe the stored key and rotate a fresh disposable one">Reset key</button>
       </div>
     </header>
 
