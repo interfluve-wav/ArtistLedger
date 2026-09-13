@@ -359,6 +359,35 @@
   .cert .breakdown .val.add { color: var(--ok); }
   .cert .breakdown .val.neg { color: var(--err); }
   .cert .breakdown .total { color: #fff; font-weight: 500; }
+  .cert .breakdown .lbl.clickable, .cert .breakdown .val.clickable {
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+  .cert .breakdown .lbl.clickable:hover {
+    color: var(--blue, #60a5fa);
+    text-decoration: underline dotted;
+  }
+  .cert .breakdown .val.clickable:hover {
+    color: var(--blue, #60a5fa);
+  }
+  .cert .breakdown .link-arrow {
+    font-size: 10px;
+    margin-left: 4px;
+    opacity: 0.6;
+    display: inline-block;
+  }
+  .cert .cross-row-link {
+    font-size: 11px;
+    margin-left: 6px;
+    color: var(--blue, #60a5fa);
+    text-decoration: none;
+    opacity: 0.85;
+    padding: 0 4px;
+  }
+  .cert .cross-row-link:hover {
+    text-decoration: underline;
+    opacity: 1;
+  }
 
   .cert .actions { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: center; align-items: center; margin-top: var(--s6); }
   .cert .actions .btn { padding: 10px 16px; font-size: 11px; letter-spacing: .04em; }

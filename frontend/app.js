@@ -454,6 +454,10 @@ function parseReceipt(receipt) {
     if (e.soundcloud_handle) matched.push({ label: "SoundCloud", verdict: e.soundcloud_verified ? "verified" : "claimed", detail: `${(Number(e.soundcloud_followers)/1000).toFixed(0)}k followers` });
     if (e.instagram_handle) matched.push({ label: "Instagram", verdict: "claimed", detail: e.instagram_handle });
     if (Number(e.lastfm_scrobble_count) >= 100) matched.push({ label: "Last.fm", verdict: "scrobbles", detail: `${e.lastfm_scrobble_count} scrobbles` });
+    if (e.ownership_proof_soundcloud) matched.push({ label: "SoundCloud", verdict: "token verified", detail: "bio token confirmed" });
+    if (e.ownership_proof_lastfm) matched.push({ label: "Last.fm", verdict: "token verified", detail: `${e.ownership_lastfm_scrobbles || 0} scrobbles + token` });
+    if (e.ownership_proof_bandcamp) matched.push({ label: "Bandcamp", verdict: "token verified", detail: "about token confirmed" });
+    if (e.ownership_proof_youtube) matched.push({ label: "YouTube", verdict: "token verified", detail: "channel bio token confirmed" });
     if (Number(e.wallet_age_days) >= 90) matched.push({ label: "Wallet age", verdict: "≥90d", detail: `${e.wallet_age_days} days` });
     if (e.ens_matches_artist || e.farcaster_fname) matched.push({ label: "Wallet name", verdict: "match", detail: e.ens_name || e.farcaster_fname });
     if (Number(e.isrc_codes?.length || 0) > 0) matched.push({ label: "ISRC codes", verdict: "found", detail: `${e.isrc_codes.length} codes` });
@@ -532,6 +536,68 @@ function renderCertificate(data, receipt) {
     $(s.rid).textContent = JSON.stringify({ source: s.src.src, handle: s.src.handle, contract_src: toContractSrc(s.src.src) }, null, 2);
   });
 
+  // Extract platform handles across sources (picked) and ownership proof rows
+  const ev = data.evidence || {};
+  const knownHandles = {};
+  (picked || []).forEach(p => { if (p && p.src && p.handle) knownHandles[p.src] = p.handle; });
+  const ownRows = document.querySelectorAll("#own-rows .own-row");
+  ownRows.forEach(row => {
+    const sel = row.querySelector("select"), inp = row.querySelector("input");
+    if (sel && inp && sel.value && inp.value.trim()) knownHandles[sel.value] = inp.value.trim();
+  });
+  const platformHref = (label, ev) => {
+    const h = (k) => (knownHandles[k] || "").trim().replace(/^@/, "");
+    const raw = (k) => (knownHandles[k] || "").trim();
+    const l = (label || "").toLowerCase();
+    if (l.includes("spotify")) {
+      if (raw("spotify").startsWith("http")) return raw("spotify");
+      if (ev.spotify_artist_id) return `https://open.spotify.com/artist/${ev.spotify_artist_id}`;
+      if (h("spotify")) return `https://open.spotify.com/artist/${h("spotify")}`;
+      return "";
+    }
+    if (l.includes("apple music")) {
+      if (raw("applemusic").startsWith("http")) return raw("applemusic");
+      if (ev.apple_music_artist_id) return `https://music.apple.com/artist/${ev.apple_music_artist_id}`;
+      return "";
+    }
+    if (l.includes("bandcamp")) {
+      if (raw("bandcamp").startsWith("http")) return raw("bandcamp");
+      const b = h("bandcamp") || (ev.bandcamp_handle || "").replace(/^@/, "");
+      return b ? `https://${b.replace(/\.bandcamp\.com.*$/, "")}.bandcamp.com` : "";
+    }
+    if (l.includes("soundcloud")) {
+      if (raw("soundcloud").startsWith("http")) return raw("soundcloud");
+      const s = h("soundcloud") || (ev.soundcloud_handle || "").replace(/^@/, "");
+      return s ? `https://soundcloud.com/${s}` : "";
+    }
+    if (l.includes("instagram")) {
+      if (raw("instagram").startsWith("http")) return raw("instagram");
+      const ig = h("instagram") || (ev.instagram_handle || "").replace(/^@/, "");
+      return ig ? `https://instagram.com/${ig}` : "";
+    }
+    if (l.includes("last.fm")) {
+      if (raw("lastfm").startsWith("http")) return raw("lastfm");
+      const lf = h("lastfm");
+      if (lf) return `https://www.last.fm/user/${lf}`;
+      if (ev.lastfm_scrobble_count !== undefined && ev.lastfm_scrobble_count !== null && Number(ev.lastfm_scrobble_count) > 0) {
+        return `https://www.last.fm/user/${h("lastfm") || ""}`;
+      }
+      return "";
+    }
+    if (l.includes("youtube")) {
+      const y = raw("youtube");
+      if (y.startsWith("http")) return y;
+      if (y.startsWith("UC")) return `https://www.youtube.com/channel/${y}`;
+      if (y.startsWith("@")) return `https://www.youtube.com/${y}`;
+      if (y) return `https://www.youtube.com/@${y}`;
+      return "";
+    }
+    if (l.includes("acoustid")) {
+      return ev.acoustid_recording_mbid ? `https://musicbrainz.org/recording/${ev.acoustid_recording_mbid}` : "";
+    }
+    return "";
+  };
+
   // Cross-reference rows from leader evidence. SECURITY: build with DOM
   // APIs (textContent) instead of template-literal innerHTML. The m.detail
   // values come from on-chain evidence fields (e.g. e.bandcamp_handle)
@@ -557,11 +623,35 @@ function renderCertificate(data, receipt) {
     const verdictEl = document.createElement("span");
     const verdictClass =
       m.verdict === "claimed" ? "warn"
-      : (m.verdict === "match" || m.verdict === "verified" || m.verdict === "track") ? "ok"
+      : (m.verdict === "match" || m.verdict === "verified" || m.verdict === "track" || m.verdict.includes("verified")) ? "ok"
       : "";
     verdictEl.className = "verdict " + verdictClass;
     verdictEl.textContent = m.verdict;
     summary.appendChild(verdictEl);
+
+    // Cross-row external link and Cmd-click support
+    const href = platformHref(m.label, ev);
+    if (href) {
+      lbl.style.cursor = "pointer";
+      lbl.title = `Cmd-click to open artist on ${m.label}`;
+      const ext = document.createElement("a");
+      ext.className = "cross-row-link";
+      ext.href = href;
+      ext.target = "_blank";
+      ext.rel = "noopener";
+      ext.textContent = "↗";
+      ext.title = `Open artist on ${m.label} in new tab`;
+      ext.onclick = (e) => e.stopPropagation();
+      summary.appendChild(ext);
+
+      summary.addEventListener("click", (e) => {
+        if (e.metaKey || e.ctrlKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          window.open(href, "_blank", "noopener");
+        }
+      });
+    }
 
     const caret = document.createElement("span");
     caret.className = "caret";
@@ -588,18 +678,38 @@ function renderCertificate(data, receipt) {
   badge.title = `On-chain strict score: ${data.score}/100 (${data.verdict}). Friendly lenient projection: ${friendly}/100.`;
 
   // Build a friendly breakdown of the score
-  const ev = data.evidence || {};
   const bd = $("breakdown-rows");
   bd.innerHTML = "";
+
+  const ytScore = ev.ownership_proof_youtube
+    ? "+25 (token bio)"
+    : (knownHandles.youtube ? "claimed (ownership)" : "—");
+  const scScore = ev.ownership_proof_soundcloud
+    ? `+3 (verified, ${(Number(ev.soundcloud_followers)/1000).toFixed(0)}k + token)`
+    : ev.soundcloud_handle
+      ? (ev.soundcloud_verified ? `+3 (verified, ${(Number(ev.soundcloud_followers)/1000).toFixed(0)}k)` : `+3 (${(Number(ev.soundcloud_followers)/1000).toFixed(0)}k)`)
+      : (knownHandles.soundcloud ? "claimed" : "—");
+  const lfmScore = ev.ownership_proof_lastfm
+    ? `+2 (${ev.ownership_lastfm_scrobbles || ev.lastfm_scrobble_count || 0} scrobbles + token)`
+    : Number(ev.lastfm_scrobble_count) >= 100
+      ? `+2 (${ev.lastfm_scrobble_count} scrobbles)`
+      : (knownHandles.lastfm ? "claimed" : "—");
+  const bcScore = ev.ownership_proof_bandcamp
+    ? "+3 (token verified)"
+    : ev.bandcamp_handle
+      ? "+3"
+      : (knownHandles.bandcamp ? "claimed" : "—");
+
   const lines = [
     ["AcoustID (audio fingerprint)", ev.acoustid_matched ? "+20" : "—"],
     ["ISRC codes (MusicBrainz)", ev.isrc_codes?.length ? `+${Math.min(10, ev.isrc_codes.length * 10)}` : "—"],
-    ["Spotify", ev.spotify_artist_id ? (ev.spotify_verified ? "+10 (verified)" : (Number(ev.spotify_popularity) >= 20 && Number(ev.spotify_followers) >= 1000) ? "+10" : "found") : "—"],
-    ["Apple Music", ev.apple_music_track_present ? "+5 (track present)" : ev.apple_music_artist_id ? "+5 (artist)" : "—"],
-    ["Bandcamp", ev.bandcamp_handle ? "+3" : "—"],
-    ["SoundCloud", ev.soundcloud_handle ? (ev.soundcloud_verified ? `+3 (verified, ${(Number(ev.soundcloud_followers)/1000).toFixed(0)}k)` : `+3 (${(Number(ev.soundcloud_followers)/1000).toFixed(0)}k)`) : "—"],
-    ["Instagram", ev.instagram_handle ? "+2" : "—"],
-    ["Last.fm", Number(ev.lastfm_scrobble_count) >= 100 ? "+2" : "—"],
+    ["Spotify", ev.spotify_artist_id ? (ev.spotify_verified ? "+10 (verified)" : (Number(ev.spotify_popularity) >= 20 && Number(ev.spotify_followers) >= 1000) ? "+10" : "found") : (knownHandles.spotify ? "claimed" : "—")],
+    ["Apple Music", ev.apple_music_track_present ? "+5 (track present)" : ev.apple_music_artist_id ? "+5 (artist)" : (knownHandles.applemusic ? "claimed" : "—")],
+    ["Bandcamp", bcScore],
+    ["SoundCloud", scScore],
+    ["Instagram", ev.instagram_handle ? "+2" : (knownHandles.instagram ? "claimed" : "—")],
+    ["Last.fm", lfmScore],
+    ["YouTube", ytScore],
     ["Two-source match", `${data.matchCount}/2 → ${data.matchCount >= 2 ? "+15" : "+" + (data.matchCount * 8)}`],
     ["Wallet age", Number(ev.wallet_age_days) >= 90 ? `+5` : "—"],
     ["Wallet name", (ev.ens_matches_artist || ev.farcaster_fname) ? "+5" : "—"],
@@ -618,6 +728,27 @@ function renderCertificate(data, receipt) {
     const v = document.createElement("div");
     v.className = "val " + (val.startsWith("+") ? "add" : "");
     v.textContent = val;
+    // Hyperlink the platform rows: click (or Cmd+click) opens the artist's
+    // page on that platform in a new tab. Works for queried platforms AND
+    // any we have handle/id data for even when not queried.
+    const href = platformHref(label, ev);
+    if (href) {
+      r.className = "lbl clickable";
+      v.className = "val clickable " + (val.startsWith("+") ? "add" : "");
+      r.title = v.title = `Cmd-click to open artist on ${label}`;
+      const ext = document.createElement("span");
+      ext.className = "link-arrow";
+      ext.textContent = "↗";
+      r.appendChild(ext);
+      const open = (e) => {
+        if (e.metaKey || e.ctrlKey || e.type === "click") {
+          e.preventDefault();
+          window.open(href, "_blank", "noopener");
+        }
+      };
+      r.addEventListener("click", open);
+      v.addEventListener("click", open);
+    }
     bd.appendChild(r); bd.appendChild(v);
   }
   // total
