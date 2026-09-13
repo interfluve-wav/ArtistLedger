@@ -811,96 +811,216 @@
   }
   function drawGlobe(t){
     ctx.clearRect(0, 0, W, H);
-    const busy = GLOBE.mode === 'verifying';
-    const speed = busy ? 0.0009 : 0.0003;
+    const mode = GLOBE.mode;
+    const busy = mode === 'verifying' || mode === 'broadcasting' || mode === 'building';
+    let speed = 0.0003;
+    if (mode === 'signing') speed = 0.0001;
+    else if (mode === 'composing') speed = 0.0005;
+    else if (mode === 'building') speed = 0.0008;
+    else if (mode === 'broadcasting') speed = 0.0015;
+    else if (mode === 'verifying') speed = 0.0010;
+
     const R = Math.min(W, H) * (busy ? 0.44 : 0.42);
     const aY = t * speed, aX = Math.sin(t * 0.0001) * 0.2, drift = Math.sin(t * 0.001) * 15;
     const burstAge = t - GLOBE.burstAt;
-    const bursting = burstAge < 2200;
-    const P = nodes.map(n => {
+    const bursting = burstAge < 3200;
+
+    const P = nodes.map((n, idx) => {
       const y1 = n.y * Math.cos(aX) - n.z * Math.sin(aX), z1 = n.y * Math.sin(aX) + n.z * Math.cos(aX);
       const x2 = n.x * Math.cos(aY) + z1 * Math.sin(aY), z2 = -n.x * Math.sin(aY) + z1 * Math.cos(aY);
-      return { x: cx + x2 * R, y: cy + y1 * R + drift, z: z2, p: n.p };
+      return { x: cx + x2 * R, y: cy + y1 * R + drift, z: z2, p: n.p, isValidator: idx < 4 };
     });
     P.sort((a, b) => a.z - b.z);
     ctx.lineWidth = 0.5;
+
+    // Node interconnecting lines
     for (let i = 0; i < P.length; i++) {
       const p1 = P[i]; if (p1.z < -0.6) continue;
       for (let j = i + 1; j < P.length; j++) {
         const p2 = P[j], dx = p1.x - p2.x, dy = p1.y - p2.y, d = Math.sqrt(dx * dx + dy * dy);
         if (d < CD) {
-          const da = (Math.max(0, p1.z + p2.z) / 2 + 1) / 2, al = da * (1 - d / CD) * (busy ? 0.45 : 0.3);
+          const da = (Math.max(0, p1.z + p2.z) / 2 + 1) / 2;
+          const al = da * (1 - d / CD) * (busy ? 0.45 : 0.28);
           if (al > 0.01) {
-            ctx.strokeStyle = bursting ? `rgba(52,211,153,${al})` : `rgba(161,161,170,${al})`;
+            if (bursting) {
+              ctx.strokeStyle = `rgba(52,211,153,${al})`;
+            } else if (mode === 'signing') {
+              ctx.strokeStyle = `rgba(251,191,36,${al * 0.8})`;
+            } else if (mode === 'broadcasting' || mode === 'verifying') {
+              ctx.strokeStyle = `rgba(96,165,250,${al * 1.2})`;
+            } else {
+              ctx.strokeStyle = `rgba(161,161,170,${al})`;
+            }
             ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
           }
         }
       }
     }
+
+    // Nodes
     P.forEach(p => {
       let a = (p.z + 1) / 2; a = Math.max(0, Math.min(1, a * 1.5 - 0.2)); if (a <= 0) return;
-      const pulse = (Math.sin(t * 0.003 + p.p) + 1) / 2, size = (1.5 + pulse) * a, cv = Math.floor(150 + 105 * a);
-      ctx.fillStyle = bursting ? `rgba(52,211,153,${a})` : `rgba(${cv},${cv},${cv},${a})`;
+      const pulse = (Math.sin(t * 0.003 + p.p) + 1) / 2;
+      const size = (1.5 + pulse) * a;
+      const cv = Math.floor(150 + 105 * a);
+
+      if (bursting) {
+        ctx.fillStyle = `rgba(52,211,153,${a})`;
+      } else if (mode === 'signing') {
+        ctx.fillStyle = `rgba(251,191,36,${a})`;
+      } else if (mode === 'verifying' && p.isValidator) {
+        // Highlight 4 validators in verifying mode
+        ctx.fillStyle = `rgba(56,189,248,${a * 1.2})`;
+      } else {
+        ctx.fillStyle = `rgba(${cv},${cv},${cv},${a})`;
+      }
       ctx.beginPath(); ctx.arc(p.x, p.y, size, 0, Math.PI * 2); ctx.fill();
-      if (pulse > 0.95 && a > 0.5) {
-        ctx.fillStyle = bursting ? `rgba(52,211,153,${a * 0.9})` : `rgba(96,165,250,${a * 0.8})`;
+
+      // Validator rings
+      if (mode === 'verifying' && p.isValidator && a > 0.4) {
+        ctx.strokeStyle = `rgba(56,189,248,${a * 0.6})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(p.x, p.y, size * 3.5, 0, Math.PI * 2); ctx.stroke();
+      }
+
+      if (pulse > 0.94 && a > 0.5) {
+        if (bursting) ctx.fillStyle = `rgba(52,211,153,${a * 0.9})`;
+        else if (mode === 'signing') ctx.fillStyle = `rgba(251,191,36,${a * 0.8})`;
+        else ctx.fillStyle = `rgba(96,165,250,${a * 0.8})`;
         ctx.beginPath(); ctx.arc(p.x, p.y, size * 2.5, 0, Math.PI * 2); ctx.fill();
       }
     });
-    // packets: dots traveling node→node while validators vote
-    if (busy) {
-      if (packets.length < 5 && Math.random() < 0.08) spawnPacket(P);
-      for (let i = packets.length - 1; i >= 0; i--) {
-        const pk = packets[i]; pk.t += 0.025;
-        if (pk.t >= 1) { packets.splice(i, 1); continue; }
-        const x = pk.a.x + (pk.b.x - pk.a.x) * pk.t, y = pk.a.y + (pk.b.y - pk.a.y) * pk.t;
+
+    // Traveling packets
+    const maxPk = mode === 'broadcasting' ? 12 : (busy ? 6 : 0);
+    const spawnChance = mode === 'broadcasting' ? 0.25 : 0.08;
+    if (packets.length < maxPk && Math.random() < spawnChance) spawnPacket(P);
+    for (let i = packets.length - 1; i >= 0; i--) {
+      const pk = packets[i];
+      pk.t += mode === 'broadcasting' ? 0.04 : 0.025;
+      if (pk.t >= 1) { packets.splice(i, 1); continue; }
+      const x = pk.a.x + (pk.b.x - pk.a.x) * pk.t, y = pk.a.y + (pk.b.y - pk.a.y) * pk.t;
+      if (bursting) {
+        ctx.fillStyle = 'rgba(52,211,153,.95)';
+      } else if (mode === 'signing') {
+        ctx.fillStyle = 'rgba(251,191,36,.95)';
+      } else {
         ctx.fillStyle = 'rgba(96,165,250,.95)';
-        ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(96,165,250,.25)';
-        ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
       }
+      ctx.beginPath(); ctx.arc(x, y, 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = bursting ? 'rgba(52,211,153,.25)' : 'rgba(96,165,250,.25)';
+      ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
     }
-    // consensus ripple
+
+    // Consensus expanding ripples
     if (bursting) {
-      const k = burstAge / 2200, rr = k * R * 1.6;
-      ctx.strokeStyle = `rgba(52,211,153,${(1 - k) * 0.6})`;
-      ctx.lineWidth = 1.5;
+      const k = burstAge / 3200, rr = k * R * 1.8;
+      ctx.strokeStyle = `rgba(52,211,153,${(1 - k) * 0.7})`;
+      ctx.lineWidth = 1.8;
       ctx.beginPath(); ctx.arc(cx, cy + drift, rr, 0, Math.PI * 2); ctx.stroke();
+      if (burstAge > 400) {
+        const k2 = (burstAge - 400) / 2800, rr2 = k2 * R * 1.5;
+        ctx.strokeStyle = `rgba(52,211,153,${(1 - k2) * 0.4})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(cx, cy + drift, rr2, 0, Math.PI * 2); ctx.stroke();
+      }
     }
     requestAnimationFrame(drawGlobe);
   }
   resizeGlobe(); requestAnimationFrame(drawGlobe);
 
-  /* ── state watchers: observe app.js DOM writes, drive globe + chips ── */
+  /* ── Reactive Atmosphere Controller ── */
   const chipConsensus = document.getElementById('chipConsensus');
   const chipConsensusDot = document.getElementById('chipConsensusDot');
   const chipVal = document.getElementById('chipVal');
-  function setMode(m) {
-    if (GLOBE.mode === m) return;
+  const chipValDot = document.getElementById('chipValDot');
+  const chip2K = document.getElementById('chip2K');
+  const chip2V = document.getElementById('chip2V');
+  const railSystem = document.getElementById('railSystem');
+
+  window.setAtmosphereMode = function(m, details) {
     GLOBE.mode = m;
-    if (m === 'verifying') {
-      chipConsensus.textContent = 'VALIDATORS_VOTING…';
+    details = details || {};
+
+    if (m === 'composing') {
+      if (details.name) {
+        chip2K.textContent = 'Artist Staged';
+        chip2V.textContent = details.name;
+        chipConsensus.textContent = details.sources ? `${details.sources} SOURCES READY` : 'PROFILES_STAGED';
+        chipConsensusDot.className = 'dot-pulse';
+      }
+    } else if (m === 'connected') {
+      if (details.wallet) {
+        chip2K.textContent = 'Signer';
+        chip2V.textContent = details.wallet.slice(0, 6) + '…' + details.wallet.slice(-4);
+        chipVal.textContent = 'WALLET_CONNECTED';
+      }
+    } else if (m === 'building') {
+      chipVal.textContent = 'CALLDATA_ASSEMBLY';
+      chipValDot.className = 'dot-pulse';
+      chip2K.textContent = 'Step 01';
+      chip2V.textContent = 'Building Calldata';
+      chipConsensus.textContent = 'PACKET_ORCHESTRATION';
       chipConsensusDot.className = 'dot-pulse';
-      chipVal.textContent = 'VAL.CMT_VOTING';
+    } else if (m === 'signing') {
+      chipVal.textContent = 'VAL.AWAIT_SIGN';
+      chipValDot.className = 'dot-pulse warn';
+      chip2K.textContent = 'Step 02';
+      chip2V.textContent = 'Awaiting Wallet';
+      chipConsensus.textContent = 'METAMASK_APPROVAL';
+      chipConsensusDot.className = 'dot-pulse';
+    } else if (m === 'broadcasting') {
+      chipVal.textContent = 'TX_PROPAGATING';
+      chipValDot.className = 'dot-pulse';
+      chip2K.textContent = 'Step 02';
+      chip2V.textContent = details.hash ? details.hash.slice(0, 10) + '…' : 'Mempool Broadcast';
+      chipConsensus.textContent = 'DISPATCHED_TO_STUDIONET';
+      chipConsensusDot.className = 'dot-pulse';
+    } else if (m === 'verifying') {
+      chipVal.textContent = 'VAL.CMT_4/4_VOTING';
+      chipValDot.className = 'dot-pulse';
+      chip2K.textContent = 'Step 03';
+      chip2V.textContent = 'Leader + 4 Vals';
+      chipConsensus.textContent = 'EVALUATING_PROOFS';
+      chipConsensusDot.className = 'dot-pulse';
     } else if (m === 'consensus') {
       GLOBE.burstAt = performance.now();
+      chipVal.textContent = 'VAL.CMT_4/4_ACCEPTED';
+      chipValDot.className = 'dot-pulse green';
+      chip2K.textContent = 'Consensus';
+      chip2V.textContent = details.score ? `${details.score}/100 VRFD` : 'MAJORITY_AGREED';
       chipConsensus.textContent = 'CONSENSUS_REACHED';
       chipConsensusDot.className = 'dot-pulse green';
-      chipVal.textContent = 'VAL.CMT_4/4_ACCEPTED';
+    } else if (m === 'error') {
+      chipVal.textContent = 'SYS.EXEC_ERROR';
+      chipValDot.className = 'dot-pulse err';
+      chip2K.textContent = 'Status';
+      chip2V.textContent = 'Reverted';
+      chipConsensus.textContent = 'TRANSACTION_FAILED';
+      chipConsensusDot.className = 'dot-pulse err';
     } else {
       chipConsensus.textContent = 'AWAITING_SUBMISSION';
       chipConsensusDot.className = 'dot-pulse idle';
       chipVal.textContent = 'VAL.CMT_4/4_ACTIVE';
+      chipValDot.className = 'dot-pulse';
+      chip2K.textContent = 'Threshold';
+      chip2V.textContent = '70 / 100 strict';
     }
-  }
+  };
+
+  // Fallback DOM observers in case app.js does not invoke setAtmosphereMode directly
   new MutationObserver(() => {
     const txt = document.getElementById('verify-status').textContent || '';
-    if (/Submitting|consensus…|Cross-referencing/i.test(txt) && GLOBE.mode === 'idle') setMode('verifying');
-    if (/Pick an artist/i.test(txt)) setMode('idle');
+    if (/Waiting for consensus/i.test(txt) && GLOBE.mode !== 'verifying') {
+      window.setAtmosphereMode('verifying');
+    }
   }).observe(document.getElementById('verify-status'), { childList: true, characterData: true, subtree: true });
+
   new MutationObserver(() => {
     const b = document.getElementById('live-badge').textContent || '';
-    if (/^VRFD/.test(b)) setMode('consensus');
+    if (/^VRFD/.test(b) && GLOBE.mode !== 'consensus') {
+      window.setAtmosphereMode('consensus');
+    }
   }).observe(document.getElementById('live-badge'), { childList: true, characterData: true, subtree: true });
 </script>
 

@@ -119,6 +119,10 @@ function renderPicked() {
       if (chip) chip.classList.remove("on");
     });
   });
+  if (window.setAtmosphereMode) {
+    const artistName = $("f-name") ? $("f-name").value.trim() : "";
+    window.setAtmosphereMode("composing", { name: artistName, sources: picked.length });
+  }
 }
 
 $("srcPick").addEventListener("click", e => {
@@ -144,11 +148,80 @@ $("srcPick").addEventListener("click", e => {
 });
 
 // ── Live verify log (right pane) ───────────────────────────────────────
-function logLine(s) {
-  const el = $("loglines");
-  el.textContent += (el.textContent ? "\n" : "") + s;
+function logLine(s, customTag) {
+  const stream = $("loglines");
+  if (!stream) return;
+  const liveBox = $("live-logs");
+  if (liveBox && liveBox.style.display === "none") liveBox.style.display = "block";
+
+  let tag = customTag || "info";
+  let cleanMsg = s;
+
+  if (s.startsWith("[01]")) {
+    tag = "build";
+    cleanMsg = s.replace(/^\[01\]\s*/, "");
+    if (window.setAtmosphereMode) window.setAtmosphereMode("building", { msg: cleanMsg });
+  } else if (s.startsWith("[02] Waiting") || s.startsWith("[02] Signing")) {
+    tag = "sign";
+    cleanMsg = s.replace(/^\[02\]\s*/, "");
+    if (window.setAtmosphereMode) window.setAtmosphereMode("signing", { msg: cleanMsg });
+  } else if (s.startsWith("[02] Submitted tx")) {
+    tag = "tx";
+    cleanMsg = s.replace(/^\[02\]\s*/, "");
+    const hashMatch = cleanMsg.match(/0x[a-fA-F0-9]+/);
+    if (window.setAtmosphereMode) window.setAtmosphereMode("broadcasting", { hash: hashMatch ? hashMatch[0] : "" });
+  } else if (s.startsWith("[03]")) {
+    tag = "consensus";
+    cleanMsg = s.replace(/^\[03\]\s*/, "");
+    if (cleanMsg.includes("FINALIZED") || cleanMsg.includes("MAJORITY")) {
+      if (window.setAtmosphereMode) window.setAtmosphereMode("consensus", { msg: cleanMsg });
+    } else {
+      if (window.setAtmosphereMode) window.setAtmosphereMode("verifying", { msg: cleanMsg });
+    }
+  } else if (s.startsWith("[err]")) {
+    tag = "err";
+    cleanMsg = s.replace(/^\[err\]\s*/, "");
+    if (window.setAtmosphereMode) window.setAtmosphereMode("error", { err: cleanMsg });
+  } else if (s.toLowerCase().includes("connected real wallet") || s.toLowerCase().includes("connected account")) {
+    tag = "ok";
+    if (window.setAtmosphereMode) window.setAtmosphereMode("connected", { wallet: walletAddr });
+  }
+
+  // Highlight hexadecimal hashes and addresses
+  cleanMsg = cleanMsg.replace(/(0x[a-fA-F0-9]{6,})/g, '<span class="hl">$1</span>');
+
+  const row = document.createElement("div");
+  row.className = `log-entry ${tag}`;
+  const timeStr = new Date().toTimeString().substring(0, 8);
+  row.innerHTML = `<span class="log-time">${timeStr}</span><span class="log-tag ${tag}">${tag}</span><span class="log-msg">${cleanMsg}</span>`;
+
+  // Remove existing cursor row before appending new line
+  const oldCursor = stream.querySelector(".log-cursor-row");
+  if (oldCursor) oldCursor.remove();
+
+  stream.appendChild(row);
+
+  // Re-add terminal cursor row
+  const cursorRow = document.createElement("div");
+  cursorRow.className = "log-cursor-row";
+  cursorRow.innerHTML = `<span>&gt;</span><span class="log-cursor"></span>`;
+  stream.appendChild(cursorRow);
+
+  stream.scrollTop = stream.scrollHeight;
+
+  const countEl = $("logCount");
+  if (countEl) {
+    const total = stream.querySelectorAll(".log-entry").length;
+    countEl.textContent = `${total} event${total === 1 ? "" : "s"}`;
+  }
 }
-function clearLog() { $("loglines").textContent = ""; }
+
+function clearLog() {
+  const stream = $("loglines");
+  if (stream) stream.innerHTML = "";
+  const countEl = $("logCount");
+  if (countEl) countEl.textContent = "0 events";
+}
 
 // ── Wallet / RPC ───────────────────────────────────────────────────────
 // Read client is initialized once at page load so the first rpcRead()
@@ -1098,7 +1171,12 @@ function initOwnershipUI() {
   const nameInput = $("f-name");
   if (nameInput) {
     nameInput.addEventListener("change", refreshOwnershipToken);
-    nameInput.addEventListener("input", () => { if (ownToken) refreshOwnershipToken(); });
+    nameInput.addEventListener("input", () => {
+      if (ownToken) refreshOwnershipToken();
+      if (window.setAtmosphereMode) {
+        window.setAtmosphereMode("composing", { name: nameInput.value.trim(), sources: picked.length });
+      }
+    });
   }
   // empty by default; user opts in
 }
@@ -1158,6 +1236,9 @@ $("submitBtn").onclick = async () => {
     lastReceipt = receipt;
     lastData = data;
     renderCertificate(data, receipt);
+    if (window.setAtmosphereMode) {
+      window.setAtmosphereMode("consensus", { verdict: data.verdict, score: data.score });
+    }
 
     // Enable the next two states
     stepB.disabled = false;
@@ -1167,6 +1248,7 @@ $("submitBtn").onclick = async () => {
     go("B");
   } catch (e) {
     logLine("[err] " + (e.message || e));
+    if (window.setAtmosphereMode) window.setAtmosphereMode("error", { err: e.message || String(e) });
     $("verify-status").textContent = "Error: " + (e.message || e);
     $("submitBtn").disabled = false;
     $("submitBtn").textContent = "Sign & submit proof →";
