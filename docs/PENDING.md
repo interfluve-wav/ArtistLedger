@@ -4,6 +4,23 @@ This document tracks the work that needs to land before the contract is
 usable on testnet for real artist registrations. Items are ordered by
 expected impact on verification correctness.
 
+**SEE `OPERATIONS.md` FIRST — it is the canonical current-state snapshot
+(2026-09-13) including the new deployed contract address, key wiring,
+scoring weights, and known bugs.**
+
+## HIGH PRIORITY (2026-09-13)
+
+- **Point frontend at new contract.** `frontend/app.js:13` +
+  UI chips still use `0x703AdAB...4384` (v0.3.4). New live contract:
+  `0x214DBC690f02d2651B4564771fB1094D3A1FDB76` (all features, schema OK,
+  deployed 2026-09-13, gasless studionet). String swap + smoke test.
+- **Debug `set_lastfm_key_pool` readback=0.** Writes ACCEPTED; Spotify pool
+  reads 3/3 correctly but Last.fm pool reads 0 for any arg shape. Suspect
+  args-ABI mismatch between `genlayer write --args` array syntax and GenVM
+  list param. Recorded in OPERATIONS.md §8.1.
+- **Run `set_api_keys`** (AcoustID + fallback single-key fields) on the new
+  contract address; pools alone may not cover the legacy path.
+
 ## Done in v0.3.3
 
 - **API key admin setter.** Added 4 storage fields
