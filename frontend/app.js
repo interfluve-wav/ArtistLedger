@@ -206,40 +206,63 @@ function attachAccount(pk) {
   document.dispatchEvent(new CustomEvent("wallet-connected"));
 }
 
-// REAL wallet: connects whatever is injected as window.ethereum (MetaMask
-// first-class via the GenLayer snap, any other EIP-1193 wallet works too as
-// long as studionet 61999 is added). The write client is created WITHOUT an
-// account so the SDK routes eth_sendTransaction to the wallet, which pops its
-// own confirm dialog. The signer address is then attached per-call on submit.
+// REAL wallet: connects whatever is injected as window.ethereum (MetaMask,
+// Brave, Rabby, Coinbase Wallet, etc.). We request accounts FIRST so the
+// wallet popup appears immediately, then ensure the studionet network (61999)
+// is active, and finally attempt the GenLayer snap non-blockingly.
 async function connectRealWallet() {
   const provider = window.ethereum;
-  writeClient = GL.createClient({ chain: GL.chains.studionet }); // no account → wallet signs
-  try {
-    // Official flow: adds studionet to the wallet AND installs the GenLayer
-    // snap (shows a MetaMask approval prompt). If the chain add fails this
-    // throws and we fall through to the manual add below.
-    await writeClient.connect("studionet", "npm");
-    logLine("studionet added to wallet · GenLayer snap installed");
-  } catch (e) {
-    // User declined the snap (or wallet lacks wallet_requestSnaps). The chain
-    // itself may already be added by connect(); re-adding is a silent no-op.
-    try {
-      await provider.request({ method: "wallet_addEthereumChain", params: [STUDIONET_CHAIN_PARAMS] });
-      await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: STUDIONET_CHAIN_ID_HEX }] });
-      logLine("studionet added to wallet (no snap — plain EIP-1193 signing)");
-    } catch (e2) {
-      throw new Error("Could not add studionet (chainId 61999) to your wallet: " + (e2.message || e2));
-    }
+  if (!provider || typeof provider.request !== "function") {
+    throw new Error("No Web3 wallet found in this browser. Please install or unlock MetaMask.");
   }
+
+  // 1. Request accounts first — pops the MetaMask connect dialog immediately
+  logLine("requesting wallet connection (check MetaMask popup)…");
   const accounts = await provider.request({ method: "eth_requestAccounts" });
-  if (!accounts || !accounts.length) throw new Error("Your wallet returned no accounts.");
+  if (!accounts || !accounts.length) throw new Error("Wallet connection rejected or no accounts available.");
+
   account = null;
   walletAddr = accounts[0];
   walletKind = "real";
   $("walletLabel").textContent = shortAddr(walletAddr) + " (MetaMask · real)";
-  $("walletLabel").title = walletAddr + "\nReal wallet — signs via MetaMask + GenLayer snap on studionet (chainId 61999).";
+  $("walletLabel").title = walletAddr + "\nReal wallet — signs via MetaMask on studionet (chainId 61999).";
   $("localAcctReset").style.display = "none";
-  logLine("connected real wallet " + shortAddr(walletAddr) + " on studionet");
+  logLine("connected real wallet " + shortAddr(walletAddr));
+
+  // 2. Switch or add studionet (chainId 61999)
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: STUDIONET_CHAIN_ID_HEX }],
+    });
+    logLine("switched to studionet network (61999)");
+  } catch (switchErr) {
+    if (switchErr.code === 4902 || switchErr.code === -32603 || switchErr.message?.includes("Unrecognized")) {
+      try {
+        await provider.request({
+          method: "wallet_addEthereumChain",
+          params: [STUDIONET_CHAIN_PARAMS],
+        });
+        logLine("added studionet (61999) to wallet");
+      } catch (addErr) {
+        console.warn("[wallet] could not add studionet chain:", addErr);
+        logLine("[warn] chain add: " + (addErr.message || addErr));
+      }
+    } else {
+      console.warn("[wallet] chain switch warning:", switchErr);
+    }
+  }
+
+  // 3. Initialize write client & attempt GenLayer snap non-blockingly
+  writeClient = GL.createClient({ chain: GL.chains.studionet });
+  try {
+    await writeClient.connect("studionet", "npm");
+    logLine("GenLayer snap active");
+  } catch (snapErr) {
+    // Snap is optional enhancement; standard EIP-1193 handles writeContract
+    console.log("[wallet] snap optional fallback:", snapErr.message || snapErr);
+  }
+
   checkWalletVerified();
   document.dispatchEvent(new CustomEvent("wallet-connected"));
 }
@@ -307,22 +330,40 @@ function renderVerifiedCert(artist) {
 }
 
 $("localAcctBtn").addEventListener("click", async () => {
+  const btn = $("localAcctBtn");
+  const prevLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Connecting…";
   try {
     if (window.ethereum && typeof window.ethereum.request === "function") {
       await connectRealWallet();
+      btn.textContent = "Connected";
     } else {
-      logLine("no browser wallet (window.ethereum) — falling back to the disposable demo key");
-      let pk = localStorage.getItem(LS_KEY);
-      if (!pk) {
-        pk = GL.generatePrivateKey();
-        localStorage.setItem(LS_KEY, pk);
-        logLine("new disposable demo key generated and saved in browser storage");
+      const msg = "MetaMask or Web3 wallet extension not detected in this browser window.\n\n" +
+                  "• If MetaMask is installed: please unlock it, ensure it has permission for this site, or open in Chrome/Brave with the extension enabled.\n" +
+                  "• To test now without MetaMask: click OK to use the disposable testnet demo key.";
+      if (confirm(msg)) {
+        logLine("no browser wallet — using disposable testnet demo key");
+        let pk = localStorage.getItem(LS_KEY);
+        if (!pk) {
+          pk = GL.generatePrivateKey();
+          localStorage.setItem(LS_KEY, pk);
+          logLine("new disposable demo key generated and saved in browser storage");
+        }
+        attachAccount(pk);
+        btn.textContent = "Connect";
+      } else {
+        btn.textContent = prevLabel;
       }
-      attachAccount(pk);
     }
   } catch (e) {
-    $("walletLabel").textContent = "Connect failed: " + (e.message || e);
-    logLine("[err] connect: " + (e.message || e));
+    btn.textContent = "Connect";
+    const errMsg = e.message || String(e);
+    $("walletLabel").textContent = "Connect failed: " + errMsg;
+    logLine("[err] connect: " + errMsg);
+    alert("Wallet connection error:\n" + errMsg);
+  } finally {
+    btn.disabled = false;
   }
 });
 
@@ -1155,6 +1196,19 @@ $("submitBtn").onclick = async () => {
     $("rpcStatus").textContent = methods
       ? `connected · ${methods.split(",").length} methods`
       : "connected (schema unavailable)";
+
+    // Auto-reconnect real wallet if already authorized in browser extension
+    if (window.ethereum && typeof window.ethereum.request === "function") {
+      try {
+        const accs = await window.ethereum.request({ method: "eth_accounts" });
+        if (accs && accs.length > 0) {
+          logLine("detected authorized browser wallet — auto-connecting " + shortAddr(accs[0]));
+          await connectRealWallet();
+        }
+      } catch (e) {
+        console.warn("[boot] silent wallet reconnect:", e.message || e);
+      }
+    }
   } catch (e) {
     $("rpcDot").classList.add("err");
     $("rpcStatus").textContent = "RPC unreachable";
