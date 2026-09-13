@@ -742,3 +742,25 @@ def test_dispute_threshold_is_lower_than_verification():
 
 def test_reputation_penalty_is_10():
     assert REPUTATION_PENALTY_PER_UPHELD_DISPUTE == u256(10)
+
+
+# ─── Spotify client-credentials mint fallback ─────────────────────────────
+
+def test_set_api_keys_accepts_client_creds(contract):
+    out = contract.set_api_keys("acoustid", "", "lastfm", "ether",
+                                "spotify-cid", "spotify-csecret")
+    assert out == "API keys set"
+    assert contract.spotify_client_id == "spotify-cid"
+    assert contract.spotify_client_secret == "spotify-csecret"
+
+
+def test_set_api_keys_defaults_client_creds_empty(contract):
+    contract.set_api_keys("acoustid", "token", "lastfm", "ether")
+    assert contract.spotify_client_id == ""
+    assert contract.spotify_client_secret == ""
+
+
+def test_mint_token_returns_empty_on_bad_creds():
+    from contracts.ProvenanceRegistry import _spotify_mint_token
+    tok = _spotify_mint_token("bad-client-id", "bad-secret")
+    assert tok == ""

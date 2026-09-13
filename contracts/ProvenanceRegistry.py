@@ -303,6 +303,33 @@ def _musicbrainz_artist(name: str) -> dict:
     return artists[0] if artists else {}
 
 
+def _spotify_mint_token(client_id: str, client_secret: str) -> str:
+    """Client-credentials OAuth: no user consent, returns a bearer token.
+
+    Used when no long-lived token is stored. Note: since Feb-2026 the
+    Spotify API omits `followers`/`popularity` for dev-mode apps, so the
+    token's only job is artist search + name binding.
+    """
+    import base64
+    import json as _json
+    import urllib.request
+
+    auth = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    req = urllib.request.Request(
+        "https://accounts.spotify.com/api/token",
+        data=b"grant_type=client_credentials",
+        headers={"Authorization": f"Basic {auth}",
+                 "Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = _json.loads(resp.read().decode())
+            return body.get("access_token", "")
+    except Exception:
+        return ""
+
+
 def _spotify_search(name: str, spotify_token: str) -> dict:
     """Search Spotify for an artist. Returns top match or {}.
 
@@ -1113,6 +1140,8 @@ class ProvenanceRegistry(gl.Contract):
     spotify_token: str
     lastfm_key: str
     etherscan_key: str
+    spotify_client_id: str
+    spotify_client_secret: str
 
     def __init__(self):
         """Schema constructor (required by GenVM). API keys default to
@@ -1121,6 +1150,8 @@ class ProvenanceRegistry(gl.Contract):
         self.spotify_token = ""
         self.lastfm_key = ""
         self.etherscan_key = ""
+        self.spotify_client_id = ""
+        self.spotify_client_secret = ""
 
     def _now(self) -> int:
         """Consensus-safe transaction timestamp (unix seconds).
@@ -1144,6 +1175,8 @@ class ProvenanceRegistry(gl.Contract):
         spotify_token: str,
         lastfm_key: str,
         etherscan_key: str,
+        spotify_client_id: str = "",
+        spotify_client_secret: str = "",
     ) -> str:
         """Set the upstream API credentials used by `register_artist`.
 
@@ -1155,9 +1188,15 @@ class ProvenanceRegistry(gl.Contract):
 
         Pass empty strings for keys you don't have; the corresponding
         evidence field will then return its default (no signal).
+
+        `spotify_client_id`/`spotify_client_secret` are optional: when a
+        spotify_token is not provided, the leader mints a short-lived
+        bearer via the client-credentials flow (no OAuth consent).
         """
         self.acoustid_key = acoustid_key
         self.spotify_token = spotify_token
+        self.spotify_client_id = spotify_client_id
+        self.spotify_client_secret = spotify_client_secret
         self.lastfm_key = lastfm_key
         self.etherscan_key = etherscan_key
         return "API keys set"
@@ -1202,6 +1241,11 @@ class ProvenanceRegistry(gl.Contract):
             # path consistent.
             acoustid_key = self.acoustid_key
             spotify_token = self.spotify_token
+            # Fallback: mint a short-lived bearer from client creds when the
+            # operator only stored a client id/secret pair (no OAuth flow).
+            if not spotify_token and self.spotify_client_id and self.spotify_client_secret:
+                spotify_token = _spotify_mint_token(self.spotify_client_id,
+                                                    self.spotify_client_secret)
             lastfm_key = self.lastfm_key
             etherscan_key = self.etherscan_key
 

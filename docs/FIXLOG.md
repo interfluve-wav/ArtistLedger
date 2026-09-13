@@ -73,3 +73,15 @@ search-then-getInfo call order).
 - `7b811a7` dark operator console re-skin (GenLayer aesthetic, reactive
   globe driven by app.js DOM signals via MutationObserver — zero
   app.js changes).
+### F4. Spotify client-credentials mint (no OAuth needed)
+**Symptom:** contract took one long-lived `spotify_token`; frontend had no
+OAuth flow, so the Spotify tier was dead without a manually-minted bearer.
+**Fix:** `_spotify_mint_token(client_id, client_secret)` — client-credentials
+flow (no user consent). `leader_collect` falls back to minting when the stored
+token is empty and client creds exist. `set_api_keys` gained two optional
+trailing args (defaults `""` — no ABI break).
+**Verified:** live mint + search for Four Tet with real creds (id returned,
+followers/popularity absent per F1 — name-binding carries the tier-1 signal).
+**Tests:** 123 green (3 new: mint fallback, creds storage, bad-creds → "").
+**Keys:** `.env` now has SPOTIFY_CLIENT_ID/SECRET (your own app), chmod 600,
+gitignored; only key NAMES ever logged.
