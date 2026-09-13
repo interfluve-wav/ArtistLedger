@@ -73,6 +73,9 @@ prov = importlib.util.module_from_spec(spec)
 sys.modules["prov"] = prov
 prov.__dict__["gl"] = gl_stub
 spec.loader.exec_module(prov)
+# The contract's `from genlayer import *` rebinds gl to the real package
+# during exec — re-inject the stub so helper calls hit the real HTTP layer.
+prov.__dict__["gl"] = gl_stub
 
 
 def main():
