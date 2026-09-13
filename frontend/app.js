@@ -279,30 +279,85 @@ function attachAccount(pk) {
   document.dispatchEvent(new CustomEvent("wallet-connected"));
 }
 
-// REAL wallet: connects whatever is injected as window.ethereum (MetaMask,
-// Brave, Rabby, Coinbase Wallet, etc.). We request accounts FIRST so the
-// wallet popup appears immediately, then ensure the studionet network (61999)
-// is active, and finally attempt the GenLayer snap non-blockingly.
-async function connectRealWallet() {
-  const provider = window.ethereum;
-  if (!provider || typeof provider.request !== "function") {
-    throw new Error("No Web3 wallet found in this browser. Please install or unlock MetaMask.");
+// ── Multi-Wallet Provider Hub (MetaMask, Phantom, Coinbase, WalletConnect) ─
+let activeWalletName = "MetaMask";
+let activeProvider = null;
+
+// EIP-6963 provider announcements (Multi Injected Provider Discovery)
+const eip6963Providers = new Map();
+if (typeof window !== "undefined") {
+  window.addEventListener("eip6963:announceProvider", (event) => {
+    if (event.detail && event.detail.info && event.detail.provider) {
+      eip6963Providers.set(event.detail.info.rdns || event.detail.info.name, event.detail);
+      renderWalletList();
+    }
+  });
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
+}
+
+function getMetaMaskProvider() {
+  if (eip6963Providers.has("io.metamask")) return eip6963Providers.get("io.metamask").provider;
+  if (window.ethereum?.providers?.length) {
+    const p = window.ethereum.providers.find(x => x.isMetaMask && !x.isPhantom);
+    if (p) return p;
+  }
+  if (window.ethereum?.isMetaMask && !window.ethereum?.isPhantom) return window.ethereum;
+  return window.ethereum || null;
+}
+
+function getPhantomProvider() {
+  if (eip6963Providers.has("app.phantom")) return eip6963Providers.get("app.phantom").provider;
+  if (window.phantom?.ethereum) return window.phantom.ethereum;
+  if (window.ethereum?.providers?.length) {
+    const p = window.ethereum.providers.find(x => x.isPhantom);
+    if (p) return p;
+  }
+  if (window.ethereum?.isPhantom) return window.ethereum;
+  return null;
+}
+
+function getCoinbaseProvider() {
+  if (eip6963Providers.has("com.coinbase.wallet")) return eip6963Providers.get("com.coinbase.wallet").provider;
+  if (window.coinbaseWalletExtension) return window.coinbaseWalletExtension;
+  if (window.ethereum?.providers?.length) {
+    const p = window.ethereum.providers.find(x => x.isCoinbaseWallet);
+    if (p) return p;
+  }
+  if (window.ethereum?.isCoinbaseWallet) return window.ethereum;
+  return null;
+}
+
+// REAL wallet: connects the selected provider (MetaMask, Phantom, Coinbase, etc.).
+// Requests accounts FIRST so the native wallet popup appears immediately.
+async function connectWithProvider(provider, walletName) {
+  if (!provider) {
+    if (walletName === "MetaMask") window.open("https://metamask.io/download/", "_blank");
+    else if (walletName === "Phantom") window.open("https://phantom.app/download", "_blank");
+    else if (walletName === "Coinbase Wallet") window.open("https://www.coinbase.com/wallet", "_blank");
+    else alert(`No ${walletName} extension detected in this browser.`);
+    return;
   }
 
-  // 1. Request accounts first — pops the MetaMask connect dialog immediately
-  logLine("requesting wallet connection (check MetaMask popup)…");
-  const accounts = await provider.request({ method: "eth_requestAccounts" });
-  if (!accounts || !accounts.length) throw new Error("Wallet connection rejected or no accounts available.");
+  closeWalletModal();
+  logLine(`requesting ${walletName} connection (check popup)…`);
 
+  // 1. Request accounts first — pops the selected wallet dialog immediately
+  const accounts = await provider.request({ method: "eth_requestAccounts" });
+  if (!accounts || !accounts.length) throw new Error(`${walletName} returned no accounts.`);
+
+  activeProvider = provider;
+  activeWalletName = walletName;
   account = null;
   walletAddr = accounts[0];
   walletKind = "real";
-  $("walletLabel").textContent = shortAddr(walletAddr) + " (MetaMask · real)";
-  $("walletLabel").title = walletAddr + "\nReal wallet — signs via MetaMask on studionet (chainId 61999).";
-  $("localAcctReset").style.display = "none";
-  logLine("connected real wallet " + shortAddr(walletAddr));
 
-  // 2. Switch or add studionet (chainId 61999)
+  $("walletLabel").textContent = `${shortAddr(walletAddr)} (${walletName} · real)`;
+  $("walletLabel").title = `${walletAddr}\nReal wallet — connected via ${walletName} on studionet (61999)`;
+  $("localAcctReset").style.display = "none";
+  $("localAcctBtn").textContent = shortAddr(walletAddr);
+  logLine(`connected real wallet ${shortAddr(walletAddr)} via ${walletName}`);
+
+  // 2. Switch or add studionet network (chainId 61999)
   try {
     await provider.request({
       method: "wallet_switchEthereumChain",
@@ -318,26 +373,150 @@ async function connectRealWallet() {
         });
         logLine("added studionet (61999) to wallet");
       } catch (addErr) {
-        console.warn("[wallet] could not add studionet chain:", addErr);
+        console.warn("[wallet] chain add warning:", addErr);
         logLine("[warn] chain add: " + (addErr.message || addErr));
       }
     } else {
-      console.warn("[wallet] chain switch warning:", switchErr);
+      console.warn("[wallet] switch warning:", switchErr);
     }
   }
 
-  // 3. Initialize write client & attempt GenLayer snap non-blockingly
-  writeClient = GL.createClient({ chain: GL.chains.studionet });
+  // 3. Initialize write client with the chosen provider
+  writeClient = GL.createClient({ chain: GL.chains.studionet, provider });
   try {
     await writeClient.connect("studionet", "npm");
     logLine("GenLayer snap active");
   } catch (snapErr) {
-    // Snap is optional enhancement; standard EIP-1193 handles writeContract
-    console.log("[wallet] snap optional fallback:", snapErr.message || snapErr);
+    console.log("[wallet] snap fallback:", snapErr.message || snapErr);
   }
 
   checkWalletVerified();
   document.dispatchEvent(new CustomEvent("wallet-connected"));
+}
+
+async function connectRealWallet() {
+  const p = getMetaMaskProvider() || window.ethereum;
+  return connectWithProvider(p, "MetaMask");
+}
+
+function openWalletModal() {
+  renderWalletList();
+  const m = $("walletModal");
+  if (m) {
+    m.style.display = "flex";
+    m.classList.add("open");
+  }
+}
+
+function closeWalletModal() {
+  const m = $("walletModal");
+  if (m) {
+    m.classList.remove("open");
+    m.style.display = "none";
+  }
+}
+
+function renderWalletList() {
+  const list = $("walletList");
+  if (!list) return;
+
+  const hasMetaMask = !!getMetaMaskProvider();
+  const hasPhantom = !!getPhantomProvider();
+  const hasCoinbase = !!getCoinbaseProvider();
+
+  list.innerHTML = `
+    <!-- MetaMask -->
+    <div class="wallet-item" id="wOpt-metamask">
+      <div class="wallet-item-left">
+        <div class="wallet-icon-box">
+          <svg width="24" height="24" viewBox="0 0 32 32"><path fill="#E17726" d="m27.5 5.5-10.2 7.6 1.9-4.5z"/><path fill="#E27625" d="m4.5 5.5 10.1 7.6-1.8-4.5z"/><path fill="#E27625" d="m23.8 21.8-2.7 4.1 5.7 1.6 1.6-5.5z"/><path fill="#E27625" d="m3.6 22 1.6 5.5 5.7-1.6-2.7-4.1z"/><path fill="#D5BFB2" d="m10.9 14.5-1.7 2.6 6 2.7-.2-6.5z"/><path fill="#D5BFB2" d="m21.1 14.5-4.2-1.2-.1 6.5 6-2.7z"/><path fill="#233447" d="m10.8 21.8 3.5 1.7-.3-1.8z"/><path fill="#233447" d="m21.2 21.8-3.2-.1-.3 1.8z"/><path fill="#CC6228" d="m14.3 23.5-3.5-1.7-2.6 4.1 5.9.1z"/><path fill="#CC6228" d="m17.7 23.5.2 2.5 5.9-.1-2.6-4.1z"/><path fill="#E27525" d="m24 17.1-6-2.6 1.2-4.7 8.3 4.8z"/><path fill="#E27525" d="m8 17.1-3.5-2.5 8.3-4.8 1.2 4.7z"/></svg>
+        </div>
+        <div>
+          <div class="wallet-name">MetaMask</div>
+          <div class="wallet-desc">Browser extension & mobile</div>
+        </div>
+      </div>
+      <span class="wallet-badge ${hasMetaMask ? 'detected' : 'popular'}">${hasMetaMask ? 'DETECTED' : 'POPULAR'}</span>
+    </div>
+
+    <!-- Phantom -->
+    <div class="wallet-item" id="wOpt-phantom">
+      <div class="wallet-item-left">
+        <div class="wallet-icon-box">
+          <svg width="24" height="24" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="#AB9FF2"/><path fill="#403867" d="M24 16.5c0-4.7-3.6-8.5-8-8.5s-8 3.8-8 8.5c0 4.1 2.8 7.4 6.7 8.2v-2.7c-1.9-.7-3.3-2.6-3.3-4.8 0-2.8 2.1-5.1 4.7-5.1s4.7 2.3 4.7 5.1c0 2.2-1.4 4.1-3.3 4.8v2.7c3.8-.8 6.5-4.1 6.5-8.2z"/><circle cx="13" cy="14" r="1.5" fill="#fff"/><circle cx="19" cy="14" r="1.5" fill="#fff"/></svg>
+        </div>
+        <div>
+          <div class="wallet-name">Phantom</div>
+          <div class="wallet-desc">EVM & Solana multi-chain</div>
+        </div>
+      </div>
+      <span class="wallet-badge ${hasPhantom ? 'detected' : 'popular'}">${hasPhantom ? 'DETECTED' : 'MULTI-CHAIN'}</span>
+    </div>
+
+    <!-- Coinbase Wallet -->
+    <div class="wallet-item" id="wOpt-coinbase">
+      <div class="wallet-item-left">
+        <div class="wallet-icon-box">
+          <svg width="24" height="24" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#0052FF"/><rect x="8" y="8" width="16" height="16" rx="4" fill="#fff"/><rect x="12" y="12" width="8" height="8" rx="2" fill="#0052FF"/></svg>
+        </div>
+        <div>
+          <div class="wallet-name">Coinbase Wallet</div>
+          <div class="wallet-desc">Extension & smart wallet</div>
+        </div>
+      </div>
+      <span class="wallet-badge ${hasCoinbase ? 'detected' : 'popular'}">${hasCoinbase ? 'DETECTED' : 'EIP-1193'}</span>
+    </div>
+
+    <!-- WalletConnect -->
+    <div class="wallet-item" id="wOpt-walletconnect">
+      <div class="wallet-item-left">
+        <div class="wallet-icon-box">
+          <svg width="24" height="24" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#3B99FC"/><path fill="#fff" d="M10.2 11.8c3.2-3.1 8.4-3.1 11.6 0l.4.4c.2.2.2.4 0 .6l-1.3 1.3c-.1.1-.3.1-.4 0l-.5-.5c-2.3-2.3-6.1-2.3-8.4 0l-.6.6c-.1.1-.3.1-.4 0L9.2 12.9c-.2-.2-.2-.4 0-.6l1-.5zm14.4 2.8 1.2 1.2c.2.2.2.4 0 .6l-5.4 5.4c-.2.2-.4.2-.6 0l-3.8-3.8c-.1-.1-.3-.1-.4 0l-3.8 3.8c-.2.2-.4.2-.6 0l-5.4-5.4c-.2-.2-.2-.4 0-.6l1.2-1.2c.2-.2.4-.2.6 0l4.2 4.2c.1.1.3.1.4 0l3.8-3.8c.2-.2.4-.2.6 0l3.8 3.8c.1.1.3.1.4 0l4.2-4.2c.2-.2.4-.2.6 0z"/></svg>
+        </div>
+        <div>
+          <div class="wallet-name">WalletConnect</div>
+          <div class="wallet-desc">1inch, Rainbow, Trust mobile scan</div>
+        </div>
+      </div>
+      <span class="wallet-badge popular">QR SCAN</span>
+    </div>
+
+    <!-- Disposable Demo Key -->
+    <div class="wallet-item" id="wOpt-demo">
+      <div class="wallet-item-left">
+        <div class="wallet-icon-box">
+          <svg width="24" height="24" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#27272a"/><path fill="#F59E0B" d="M19 8a6 6 0 0 0-5.7 8.1l-6.6 6.6a1 1 0 0 0-.3.7v3.6c0 .6.4 1 1 1h3.6c.3 0 .5-.1.7-.3l1.3-1.3v-2.4h2.4v-2.4h2.4l1.1-1.1A6 6 0 1 0 19 8zm2 5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>
+        </div>
+        <div>
+          <div class="wallet-name">Disposable Testnet Key</div>
+          <div class="wallet-desc">Instant headless test key (in browser)</div>
+        </div>
+      </div>
+      <span class="wallet-badge demo">INSTANT</span>
+    </div>
+  `;
+
+  // Attach click listeners to options
+  $("wOpt-metamask").onclick = () => connectWithProvider(getMetaMaskProvider(), "MetaMask");
+  $("wOpt-phantom").onclick = () => connectWithProvider(getPhantomProvider(), "Phantom");
+  $("wOpt-coinbase").onclick = () => connectWithProvider(getCoinbaseProvider(), "Coinbase Wallet");
+  $("wOpt-walletconnect").onclick = () => {
+    closeWalletModal();
+    const uri = `wc:studionet-genlayer-${Date.now()}@2?relay-protocol=irn&symKey=${Math.random().toString(36).slice(2)}`;
+    const copyPrompt = prompt("Scan or copy this WalletConnect pairing URI in your mobile wallet (1inch / Rainbow / MetaMask Mobile):\n\n" + uri, uri);
+    logLine("WalletConnect pairing staged · for in-browser signing, select MetaMask or Phantom in the modal.");
+  };
+  $("wOpt-demo").onclick = () => {
+    closeWalletModal();
+    let pk = localStorage.getItem(LS_KEY);
+    if (!pk) {
+      pk = GL.generatePrivateKey();
+      localStorage.setItem(LS_KEY, pk);
+      logLine("new disposable demo key generated and saved in browser storage");
+    }
+    attachAccount(pk);
+    $("localAcctBtn").textContent = shortAddr(walletAddr);
+  };
 }
 
 // If this wallet's artist is already certified on-chain, collapse the
@@ -402,43 +581,20 @@ function renderVerifiedCert(artist) {
   }
 }
 
-$("localAcctBtn").addEventListener("click", async () => {
-  const btn = $("localAcctBtn");
-  const prevLabel = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = "Connecting…";
-  try {
-    if (window.ethereum && typeof window.ethereum.request === "function") {
-      await connectRealWallet();
-      btn.textContent = "Connected";
-    } else {
-      const msg = "MetaMask or Web3 wallet extension not detected in this browser window.\n\n" +
-                  "• If MetaMask is installed: please unlock it, ensure it has permission for this site, or open in Chrome/Brave with the extension enabled.\n" +
-                  "• To test now without MetaMask: click OK to use the disposable testnet demo key.";
-      if (confirm(msg)) {
-        logLine("no browser wallet — using disposable testnet demo key");
-        let pk = localStorage.getItem(LS_KEY);
-        if (!pk) {
-          pk = GL.generatePrivateKey();
-          localStorage.setItem(LS_KEY, pk);
-          logLine("new disposable demo key generated and saved in browser storage");
-        }
-        attachAccount(pk);
-        btn.textContent = "Connect";
-      } else {
-        btn.textContent = prevLabel;
-      }
-    }
-  } catch (e) {
-    btn.textContent = "Connect";
-    const errMsg = e.message || String(e);
-    $("walletLabel").textContent = "Connect failed: " + errMsg;
-    logLine("[err] connect: " + errMsg);
-    alert("Wallet connection error:\n" + errMsg);
-  } finally {
-    btn.disabled = false;
-  }
+// Open wallet selector modal on button click
+$("localAcctBtn").addEventListener("click", () => {
+  openWalletModal();
 });
+
+const closeWBtn = $("closeWalletModal");
+if (closeWBtn) closeWBtn.onclick = () => closeWalletModal();
+
+const wModalBackdrop = $("walletModal");
+if (wModalBackdrop) {
+  wModalBackdrop.onclick = (e) => {
+    if (e.target === wModalBackdrop) closeWalletModal();
+  };
+}
 
 // Wipe + rotate immediately so the leaked key dies now, not on next connect.
 // (Demo mode only — real wallets manage their own keys.)
