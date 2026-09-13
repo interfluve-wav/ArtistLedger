@@ -770,57 +770,80 @@ def _spotify_artist_id(raw: str) -> str:
     return ""
 
 
-def _lastfm_resolve_artist(artist: str, lastfm_key: str) -> str:
+def _lastfm_resolve_artist(artist: str, lastfm_key: "str | list") -> str:
     """Resolve a claimed artist name to Last.fm's canonical name via artist.search.
 
     `artist.getInfo` requires the exact canonical name — a raw user-typed
     "fred again.." yields 0 userplaycount even for a real fan. The search
     endpoint returns the top match's canonical name + MBID, which we then
     feed back into getInfo. Requires the API key; empty key → "" (no
-    signal, caller treats as 0).
+    signal, caller treats as 0). `lastfm_key` may be a list (rate-limit
+    pool): rotates to the next key on error 29 (rate limit) / 10 (invalid).
     """
-    if not artist or not lastfm_key:
+    if not artist:
         return ""
-    try:
-        url = (
-            f"https://ws.audioscrobbler.com/2.0/?method=artist.search"
-            f"&artist={artist}&limit=1&api_key={lastfm_key}&format=json"
-        )
-        data = _http_get_json(url)
-        matches = (data or {}).get("results", {}).get("artistmatches", {}).get("artist", [])
-        if not matches:
+    keys = lastfm_key if isinstance(lastfm_key, (list, tuple)) else [lastfm_key]
+    keys = [k for k in keys if k]
+    if not keys:
+        return ""
+    for api_key in keys:
+        try:
+            url = (
+                f"https://ws.audioscrobbler.com/2.0/?method=artist.search"
+                f"&artist={artist}&limit=1&api_key={api_key}&format=json"
+            )
+            data = _http_get_json(url)
+            if not data:
+                continue
+            err = data.get("error")
+            if err == 29 or err == 10:  # rate-limited / invalid key → rotate
+                continue
+            matches = (data or {}).get("results", {}).get("artistmatches", {}).get("artist", [])
+            if not matches:
+                return ""
+            name = matches[0].get("name", "")
+            mbid = matches[0].get("mbid", "")
+            # strong binding: MBID present means it's a tracked Last.fm artist,
+            # not a vanity page — accept the canonical name
+            if name and mbid:
+                return name
             return ""
-        name = matches[0].get("name", "")
-        mbid = matches[0].get("mbid", "")
-        # strong binding: MBID present means it's a tracked Last.fm artist,
-        # not a vanity page — accept the canonical name
-        if name and mbid:
-            return name
-        return ""
-    except Exception:
-        return ""
+        except Exception:
+            continue
+    return ""
 
 
-def _lastfm_scrobbles(artist: str, lastfm_user: str, lastfm_key: str) -> int:
-    """Return scrobble count for an artist in a Last.fm user's history."""
+def _lastfm_scrobbles(artist: str, lastfm_user: str, lastfm_key: "str | list") -> int:
+    """Return scrobble count for an artist in a Last.fm user's history.
+
+    `lastfm_key` may be a single key or a list of keys (rate-limit pool):
+    on error 29 (rate limit) or 10 (invalid key) the pool rotates to the
+    next key. Returns 0 when every key fails or no key is present.
+    """
     if not lastfm_user or not artist:
         return 0
-    if not lastfm_key:
+    keys = lastfm_key if isinstance(lastfm_key, (list, tuple)) else [lastfm_key]
+    keys = [k for k in keys if k]
+    if not keys:
         return 0
-    api_key = lastfm_key
     # resolve to the canonical name first — see _lastfm_resolve_artist
-    canonical = _lastfm_resolve_artist(artist, api_key)
+    canonical = _lastfm_resolve_artist(artist, keys[0])
     if not canonical:
         return 0
-    url = (
-        f"https://ws.audioscrobbler.com/2.0/?method=artist.getInfo"
-        f"&artist={canonical}&username={lastfm_user}&api_key={api_key}&format=json"
-    )
-    data = _http_get_json(url)
-    try:
-        return int(data.get("artist", {}).get("stats", {}).get("userplaycount", 0))
-    except Exception:
-        return 0
+    for api_key in keys:
+        url = (
+            f"https://ws.audioscrobbler.com/2.0/?method=artist.getInfo"
+            f"&artist={canonical}&username={lastfm_user}&api_key={api_key}&format=json"
+        )
+        data = _http_get_json(url)
+        try:
+            err = data.get("error")
+            if err == 29 or err == 10:  # rate-limited / invalid key → rotate
+                continue
+            return int(data.get("artist", {}).get("stats", {}).get("userplaycount", 0))
+        except Exception:
+            continue
+    return 0
 
 
 # ─── Tier 2.6 — ownership proofs (artist-controlled tokens) ───────────────
@@ -860,7 +883,7 @@ def _soundcloud_bio(handle: str) -> str:
         return ""
 
 
-def _lastfm_profile_and_scrobbles(handle: str, lastfm_key: str) -> tuple[str, int]:
+def _lastfm_profile_and_scrobbles(handle: str, lastfm_key: "str | list") -> tuple[str, int]:
     """Fetch a Last.fm user page: returns (bio_html, lifetime_scrobbles).
 
     Lifetime scrobble count comes from the user profile page — it's the
@@ -1149,6 +1172,7 @@ class ProvenanceRegistry(gl.Contract):
         self.acoustid_key = ""
         self.spotify_token = ""
         self.lastfm_key = ""
+        self.lastfm_key_pool: list = []
         self.etherscan_key = ""
         self.spotify_client_id = ""
         self.spotify_client_secret = ""
@@ -1201,6 +1225,21 @@ class ProvenanceRegistry(gl.Contract):
         self.etherscan_key = etherscan_key
         return "API keys set"
 
+    @gl.public.write
+    def set_lastfm_key_pool(self, keys: list) -> str:
+        """Seed/rotate the Last.fm key pool (rate-limit failover).
+
+        Each key is used round-robin; on error 29 (rate limit) or 10
+        (invalid/revoked key) the resolver advances to the next key.
+        Empty list clears the pool.
+        """
+        self.lastfm_key_pool = [k for k in keys if isinstance(k, str) and k]
+        return f"Last.fm key pool set ({len(self.lastfm_key_pool)} keys)"
+
+    @gl.public.view
+    def get_lastfm_pool_size(self) -> int:
+        return len(self.lastfm_key_pool)
+
     # ─── Identity verification ─────────────────────────────────────────────
 
     @gl.public.write
@@ -1247,6 +1286,10 @@ class ProvenanceRegistry(gl.Contract):
                 spotify_token = _spotify_mint_token(self.spotify_client_id,
                                                     self.spotify_client_secret)
             lastfm_key = self.lastfm_key
+            # Last.fm rate-limit pool: pool wins when seeded (round-robin
+            # failover on error 29/10); single key is the fallback.
+            if self.lastfm_key_pool:
+                lastfm_key = list(self.lastfm_key_pool)
             etherscan_key = self.etherscan_key
 
             ev = Evidence.empty()

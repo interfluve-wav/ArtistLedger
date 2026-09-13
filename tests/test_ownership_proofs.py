@@ -321,3 +321,67 @@ class TestLastfmPageParsing:
 
     def test_empty_handle_returns_zero(self):
         assert prov._lastfm_profile_and_scrobbles("", "") == ("", 0)
+
+
+# ─── Last.fm key pool rotation ────────────────────────────────────────────
+
+class FakePoolResolve:
+    """Stub _lastfm_resolve_artist to return a canonical name."""
+    def __init__(self, scrobbles_results):
+        self.scrobbles_results = scrobbles_results  # list of (data, key) per call
+        self.calls = []
+
+    def __call__(self, url):
+        self.calls.append(url)
+        d = self.scrobbles_results[len(self.calls) - 1] if len(self.calls) - 1 < len(self.scrobbles_results) else {"error": 29}
+        return d
+
+
+def test_pool_rotates_on_rate_limit(monkeypatch):
+    _lastfm_scrobbles = prov._lastfm_scrobbles
+    calls = []
+    def fake_get(url):
+        calls.append(url)
+        if len(calls) == 1:
+            return {"error": 29}  # first key rate-limited
+        if len(calls) == 2:
+            return {"error": 10}  # second key invalid
+        return {"artist": {"stats": {"userplaycount": 42}}}
+    monkeypatch.setattr(prov, "_http_get_json", fake_get)
+    def fake_resolve(artist, key):
+        return "Cher"
+    monkeypatch.setattr(prov, "_lastfm_resolve_artist", fake_resolve)
+    result = _lastfm_scrobbles("Cher", "someuser", ["k1", "k2", "k3"])
+    assert result == 42
+    assert len(calls) == 3  # rotated through all three
+
+
+def test_pool_all_fail_returns_zero(monkeypatch):
+    _lastfm_scrobbles = prov._lastfm_scrobbles
+    monkeypatch.setattr(prov, "_http_get_json",
+                        lambda url: {"error": 29})
+    monkeypatch.setattr(prov, "_lastfm_resolve_artist",
+                        lambda artist, key: "Cher")
+    assert _lastfm_scrobbles("Cher", "user", ["a", "b"]) == 0
+
+
+def test_single_key_still_works(monkeypatch):
+    _lastfm_scrobbles = prov._lastfm_scrobbles
+    monkeypatch.setattr(prov, "_http_get_json",
+                        lambda url: {"artist": {"stats": {"userplaycount": 7}}})
+    monkeypatch.setattr(prov, "_lastfm_resolve_artist",
+                        lambda artist, key: "Cher")
+    assert _lastfm_scrobbles("Cher", "user", "single-key") == 7
+
+
+def test_pool_resolve_rotates_on_error(monkeypatch):
+    _lastfm_resolve_artist = prov._lastfm_resolve_artist
+    calls = []
+    def fake_get(url):
+        calls.append(url)
+        if len(calls) == 1:
+            return {"error": 29}
+        return {"results": {"artistmatches": {"artist": [{"name": "Cher", "mbid": "abc"}]}}}
+    monkeypatch.setattr(prov, "_http_get_json", fake_get)
+    assert _lastfm_resolve_artist("cher", ["k1", "k2"]) == "Cher"
+    assert len(calls) == 2
