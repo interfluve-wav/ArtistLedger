@@ -394,7 +394,8 @@ def test_set_spotify_key_pool_filters_bad_entries():
     out = inst.set_spotify_key_pool([["cid1", "csec1"], ["cid2", ""], "junk", ["ok", "sec", "extra"]])
     assert out == "Spotify key pool set (2 pairs)"
     assert inst.get_spotify_pool_size() == 2
-    assert inst.spotify_client_pairs == [["cid1", "csec1"], ["ok", "sec"]]
+    assert inst.spotify_client_pairs == json.dumps([["cid1", "csec1"], ["ok", "sec"]])
+    assert inst._spotify_pool_list() == [["cid1", "csec1"], ["ok", "sec"]]
 
 
 def test_spotify_pool_rotates_on_failed_mint(monkeypatch):

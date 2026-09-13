@@ -1172,7 +1172,7 @@ class ProvenanceRegistry(gl.Contract):
     etherscan_key: str
     spotify_client_id: str
     spotify_client_secret: str
-    spotify_client_pairs: list = []   # list of [client_id, client_secret] — rate-limit pool
+    spotify_client_pairs: str  # JSON: [[client_id, secret], ...] — rate-limit pool (str is storage-safe; bare list is not)
 
     def __init__(self):
         """Schema constructor (required by GenVM). API keys default to
@@ -1180,11 +1180,11 @@ class ProvenanceRegistry(gl.Contract):
         self.acoustid_key = ""
         self.spotify_token = ""
         self.lastfm_key = ""
-        self.lastfm_key_pool: list = []
+        self.lastfm_key_pool: str = ""   # JSON array of keys — str is storage-safe
         self.etherscan_key = ""
         self.spotify_client_id = ""
         self.spotify_client_secret = ""
-        self.spotify_client_pairs = []
+        self.spotify_client_pairs = ""   # JSON: [[client_id, secret], ...]
 
     def _now(self) -> int:
         """Consensus-safe transaction timestamp (unix seconds).
@@ -1242,12 +1242,23 @@ class ProvenanceRegistry(gl.Contract):
         (invalid/revoked key) the resolver advances to the next key.
         Empty list clears the pool.
         """
-        self.lastfm_key_pool = [k for k in keys if isinstance(k, str) and k]
-        return f"Last.fm key pool set ({len(self.lastfm_key_pool)} keys)"
+        cleaned = [k for k in keys if isinstance(k, str) and k]
+        self.lastfm_key_pool = json.dumps(cleaned)
+        return f"Last.fm key pool set ({len(cleaned)} keys)"
 
     @gl.public.view
     def get_lastfm_pool_size(self) -> int:
-        return len(self.lastfm_key_pool)
+        try:
+            return len(json.loads(self.lastfm_key_pool or "[]"))
+        except Exception:
+            return 0
+
+    def _lastfm_pool_list(self) -> list:
+        """Parse the stored JSON pool into a list for the leader."""
+        try:
+            return json.loads(self.lastfm_key_pool or "[]")
+        except Exception:
+            return []
 
     @gl.public.write
     def set_spotify_key_pool(self, pairs: list) -> str:
@@ -1257,15 +1268,26 @@ class ProvenanceRegistry(gl.Contract):
         the pool on failure (401/429); the single pair from set_api_keys
         is the fallback when the pool is empty or exhausted.
         """
-        self.spotify_client_pairs = [
+        cleaned = [
             [str(p[0]), str(p[1])] for p in pairs
             if isinstance(p, (list, tuple)) and len(p) >= 2 and p[0] and p[1]
         ]
-        return f"Spotify key pool set ({len(self.spotify_client_pairs)} pairs)"
+        self.spotify_client_pairs = json.dumps(cleaned)
+        return f"Spotify key pool set ({len(cleaned)} pairs)"
 
     @gl.public.view
     def get_spotify_pool_size(self) -> int:
-        return len(self.spotify_client_pairs)
+        try:
+            return len(json.loads(self.spotify_client_pairs or "[]"))
+        except Exception:
+            return 0
+
+    def _spotify_pool_list(self) -> list:
+        """Parse the stored JSON pool into a list for the leader."""
+        try:
+            return json.loads(self.spotify_client_pairs or "[]")
+        except Exception:
+            return []
 
     # ─── Identity verification ─────────────────────────────────────────────
 
@@ -1310,7 +1332,7 @@ class ProvenanceRegistry(gl.Contract):
             # Spotify: try the pool first (rate-limit failover), then the
             # single client pair, then any stored long-lived token.
             if not spotify_token:
-                for pair in self.spotify_client_pairs:
+                for pair in self._spotify_pool_list():
                     spotify_token = _spotify_mint_token(pair[0], pair[1])
                     if spotify_token:
                         break
@@ -1320,8 +1342,9 @@ class ProvenanceRegistry(gl.Contract):
             lastfm_key = self.lastfm_key
             # Last.fm rate-limit pool: pool wins when seeded (round-robin
             # failover on error 29/10); single key is the fallback.
-            if self.lastfm_key_pool:
-                lastfm_key = list(self.lastfm_key_pool)
+            pool_keys = self._lastfm_pool_list()
+            if pool_keys:
+                lastfm_key = pool_keys
             etherscan_key = self.etherscan_key
 
             ev = Evidence.empty()
