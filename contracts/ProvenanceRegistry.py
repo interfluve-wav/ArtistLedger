@@ -873,9 +873,12 @@ def _soundcloud_bio(handle: str) -> str:
     try:
         body = _http_get(f"https://soundcloud.com/{handle}")
         bio = _regex_any(body, (
-            r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"',
-            r'<meta[^>]+property="og:description"[^>]+content="([^"]+)"',
-            r'<meta[^>]+name="description"[^>]+content="([^"]+)"',
+            # Embedded user JSON: description immediately followed by
+            # followers_count (verified against live page 2026-09-13 — the
+            # generic "Listen to X | SoundCloud is an audio platform..." og
+            # meta description is boilerplate and must NOT be the match).
+            r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"followers_count"',
+            r'"biography"\s*:\s*"((?:[^"\\]|\\.)*)"',
         ))
         # JSON-escaped bio: unescape \" and \/ so the token matches
         return bio.replace('\\n', '\n').replace('\\"', '"').replace('\\/', '/')
