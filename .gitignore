@@ -11,3 +11,24 @@ artistledger.egg-info/
 .vercel
 .env*
 .last-deployed-sha
+
+# ── secrets: wallet keys & credentials (never commit) ──
+*.keystore
+*.pem
+*.key
+*.p12
+*.pfx
+*.keychain
+UTC--*.json
+keystore*/
+wallet*.json
+accounts*.json
+wallets*.json
+.secrets/
+secrets*/
+.private-keys/
+keys.enc
+id_rsa*
+id_ed25519*
+*.dsa
+*.ecdsa
