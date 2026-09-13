@@ -419,65 +419,125 @@ function closeWalletModal() {
 }
 
 let currentWcUri = "";
+let wcSignClient = null;   // active WalletConnect SignClient
+let wcSessionTopic = null; // active session topic
+let wcPairingAbort = null; // cancel current pairing attempt
 
-function showWalletConnectQR() {
+async function endWcSession(reason) {
+  if (wcPairingAbort) { wcPairingAbort(); wcPairingAbort = null; }
+  if (wcSignClient && wcSessionTopic) {
+    try {
+      await wcSignClient.disconnect({
+        topic: wcSessionTopic,
+        reason: { code: 6000, message: reason || "User disconnected" },
+      });
+    } catch (e) { /* session may already be gone */ }
+    wcSessionTopic = null;
+  }
+}
+
+function setQrStatus(msg, isError) {
+  const el = $("qrStatusLine");
+  if (el) {
+    el.textContent = msg;
+    el.style.color = isError ? "#ff6b6b" : "";
+  }
+}
+
+// Real WalletConnect v2 pairing: SignClient connects to the relay, generates a
+// symmetric key + pairing topic, and the QR encodes the wc: URI. When the phone
+// wallet scans + approves, the relay delivers the session with the wallet's
+// account, which we stage as the active identity.
+async function showWalletConnectQR() {
   $("walletList").style.display = "none";
   const qrView = $("walletQrView");
   qrView.style.display = "flex";
 
-  currentWcUri = `wc:studionet-genlayer-${Date.now()}@2?relay-protocol=irn&symKey=${Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, "0")).join("")}`;
-  
   const container = $("qrCodeContainer");
-  container.innerHTML = "";
-  if (typeof QRCode !== "undefined") {
-    new QRCode(container, {
-      text: currentWcUri,
-      width: 200,
-      height: 200,
-      colorDark: "#000000",
-      colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.M
-    });
-  } else {
-    container.innerHTML = `<div style="padding:20px;text-align:center;color:#000;font-family:var(--mono);font-size:11px">QR Generator ready<br><code style="font-size:9px">${currentWcUri.slice(0, 30)}…</code></div>`;
+  container.innerHTML = `<div style="padding:20px;text-align:center;color:#000;font-family:var(--mono);font-size:11px">opening relay…</div>`;
+  setQrStatus("Connecting to WalletConnect relay…");
+
+  if (typeof window.WalletConnectSignClient === "undefined") {
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:#000;font-family:var(--mono);font-size:11px">WalletConnect library failed to load</div>`;
+    setQrStatus("walletconnect-bundle.js missing or blocked", true);
+    return;
   }
 
-  logLine("WalletConnect pairing QR code generated — scan with mobile wallet");
+  try {
+    // Fresh client per pairing (cheap, avoids stale session state)
+    if (wcSignClient) { try { wcSignClient = null; } catch (e) {} }
+    wcSignClient = await window.WalletConnectSignClient.init({
+      projectId: window.WC_PROJECT_ID,
+      metadata: {
+        name: "ArtistLedger",
+        description: "Onchain artist provenance & ownership proofs",
+        url: location.origin,
+        icons: [],
+      },
+    });
+    setQrStatus("Pairing… scan the QR with your mobile wallet");
 
-  $("qrBackBtn").onclick = () => {
-    $("walletQrView").style.display = "none";
-    $("walletList").style.display = "flex";
-  };
+    const { uri, approval } = await wcSignClient.connect({
+      optionalNamespaces: {
+        eip155: {
+          chains: ["eip155:1"],
+          methods: ["personal_sign", "eth_sendTransaction", "eth_signTypedData_v4"],
+          events: ["chainChanged", "accountsChanged"],
+        },
+      },
+    });
+    currentWcUri = uri;
 
-  $("qrCopyBtn").onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(currentWcUri);
-      $("qrCopyText").textContent = "Copied to clipboard! ✓";
-      setTimeout(() => { if ($("qrCopyText")) $("qrCopyText").textContent = "Copy pairing URI"; }, 2000);
-    } catch (e) {
-      prompt("Copy pairing URI:", currentWcUri);
+    container.innerHTML = "";
+    if (typeof QRCode !== "undefined") {
+      new QRCode(container, {
+        text: uri,
+        width: 200,
+        height: 200,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+    } else {
+      container.innerHTML = `<div style="padding:20px;text-align:center;color:#000;font-family:var(--mono);font-size:11px">QR lib missing<br><code style="font-size:9px">${uri.slice(0, 30)}…</code></div>`;
     }
-  };
+    logLine("WalletConnect pairing URI generated — scan with mobile wallet");
 
-  $("qrManualBtn").onclick = () => {
-    const addr = $("qrManualAddress").value.trim();
-    if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
-      alert("Please enter a valid 42-character Ethereum address (0x...).");
+    // Approve / reject race so the user can back out
+    const aborted = new Promise((_, rej) => { wcPairingAbort = () => rej(new Error("pairing cancelled")); });
+    let session;
+    try {
+      session = await Promise.race([approval(), aborted]);
+    } catch (e) {
+      setQrStatus("Pairing cancelled");
       return;
     }
-    closeWalletModal();
-    walletAddr = addr;
-    walletKind = "real";
-    account = null;
-    activeWalletName = "WalletConnect";
+    wcPairingAbort = null;
+    wcSessionTopic = session.topic;
+
+    const eip155 = session.namespaces?.eip155;
+    const accounts = eip155?.accounts || [];
+    const walletAddr = accounts[0]?.split(":")[2];
+    if (!walletAddr) {
+      setQrStatus("Wallet returned no account", true);
+      return;
+    }
+
+    setQrStatus(`Connected: ${walletAddr.slice(0, 6)}…${walletAddr.slice(-4)}`);
+    logLine(`WalletConnect session established · topic ${session.topic.slice(0, 8)}…`);
     $("walletLabel").textContent = `${shortAddr(walletAddr)} (WalletConnect · real)`;
-    $("walletLabel").title = `${walletAddr}\nWalletConnect address staged for studionet (chainId 61999)`;
+    $("walletLabel").title = `${walletAddr}\nConnected via WalletConnect session ${session.topic.slice(0, 12)}…`;
     $("localAcctReset").style.display = "none";
     $("localAcctBtn").textContent = shortAddr(walletAddr);
-    logLine(`connected ${shortAddr(walletAddr)} via WalletConnect pairing`);
+    walletKind = "real";
     checkWalletVerified();
     document.dispatchEvent(new CustomEvent("wallet-connected"));
-  };
+    setTimeout(closeWalletModal, 900);
+  } catch (e) {
+    console.error("[walletconnect]", e);
+    setQrStatus(`Pairing failed: ${e.message || e}`, true);
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:#000;font-family:var(--mono);font-size:11px">Pairing failed</div>`;
+  }
 }
 
 function renderWalletList() {
@@ -567,6 +627,15 @@ function renderWalletList() {
   $("wOpt-walletconnect").onclick = () => {
     showWalletConnectQR();
   };
+  // Back from the QR view cancels any pending pairing
+  const qrBack = $("qrBackBtn");
+  if (qrBack) {
+    qrBack.onclick = () => {
+      if (wcPairingAbort) { wcPairingAbort(); wcPairingAbort = null; }
+      $("walletQrView").style.display = "none";
+      $("walletList").style.display = "flex";
+    };
+  }
   $("wOpt-demo").onclick = () => {
     closeWalletModal();
     let pk = localStorage.getItem(LS_KEY);
