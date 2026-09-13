@@ -7,7 +7,7 @@
 // Deployed on studionet (2026-09-13, gasless): all features incl.
 // ownership proofs + key pools. Verified: schema OK, 12 methods,
 // 5/5 validators AGREE on deploy + writes. See docs/OPERATIONS.md.
-const CONTRACT = "0x214DBC690f02d2651B4564771fB1094D3A1FDB76";
+const CONTRACT = "0xA73E4588E900f0d4b62Eca0e963B275dc2AfC5a4";
 const GL = window.GenLayerSDK;
 
 let walletAddr = null;    // connected wallet
