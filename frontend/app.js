@@ -419,9 +419,60 @@ function closeWalletModal() {
 }
 
 let currentWcUri = "";
-let wcSignClient = null;   // active WalletConnect SignClient
+let wcSignClient = null;   // active WalletConnect SignClient (reused, persists sessions)
 let wcSessionTopic = null; // active session topic
 let wcPairingAbort = null; // cancel current pairing attempt
+const WC_TOPIC_KEY = "al_wc_topic";
+
+function setQrStatus(msg, isError) {
+  const el = $("qrStatusLine");
+  if (el) {
+    el.textContent = msg;
+    el.style.color = isError ? "#ff6b6b" : "";
+  }
+}
+
+// One client for the page lifetime — SignClient persists sessions in
+// IndexedDB, so a reload can silently restore the previous session.
+async function ensureWcClient() {
+  if (wcSignClient) return wcSignClient;
+  wcSignClient = await window.WalletConnectSignClient.init({
+    projectId: window.WC_PROJECT_ID,
+    metadata: {
+      name: "ArtistLedger",
+      description: "Onchain artist provenance & ownership proofs",
+      url: "https://artistledger.vercel.app",
+      icons: [],
+    },
+  });
+  return wcSignClient;
+}
+
+// EIP-1193 shim so the genlayer SDK can route signing requests through the
+// WalletConnect session (phone wallet pops its own confirm screens).
+function makeWcProvider() {
+  return {
+    request: async ({ method, params }) => {
+      if (!wcSignClient || !wcSessionTopic) throw new Error("WalletConnect session closed");
+      const req = { topic: wcSessionTopic, chainId: "eip155:1", request: { method, params } };
+      try {
+        return await wcSignClient.request(req);
+      } catch (e) {
+        // Studionet isn't a built-in phone-wallet network — add it, then retry
+        // once without the chainId pin (wallet routes to its active network).
+        if (/unauthorized|chain/i.test(String(e.message))) {
+          await wcSignClient.request({
+            topic: wcSessionTopic, chainId: "eip155:1",
+            request: { method: "wallet_addEthereumChain", params: [STUDIONET_CHAIN_PARAMS] },
+          });
+          return wcSignClient.request({ topic: wcSessionTopic, request: { method, params } });
+        }
+        throw e;
+      }
+    },
+    on: () => {}, removeListener: () => {},
+  };
+}
 
 async function endWcSession(reason) {
   if (wcPairingAbort) { wcPairingAbort(); wcPairingAbort = null; }
@@ -434,14 +485,32 @@ async function endWcSession(reason) {
     } catch (e) { /* session may already be gone */ }
     wcSessionTopic = null;
   }
+  localStorage.removeItem(WC_TOPIC_KEY);
 }
 
-function setQrStatus(msg, isError) {
-  const el = $("qrStatusLine");
-  if (el) {
-    el.textContent = msg;
-    el.style.color = isError ? "#ff6b6b" : "";
+function adoptWcSession(session, opts = {}) {
+  wcSessionTopic = session.topic;
+  localStorage.setItem(WC_TOPIC_KEY, session.topic);
+  const accounts = session.namespaces?.eip155?.accounts || [];
+  const addr = accounts[0]?.split(":")[2];
+  if (!addr) return false;
+  walletAddr = addr;                 // ← GLOBAL (was shadowed before — the reconnect bug)
+  walletKind = "real";
+  activeWalletName = "WalletConnect";
+  account = null;
+  writeClient = GL.createClient({ chain: GL.chains.studionet, provider: makeWcProvider() });
+  $("walletLabel").textContent = `${shortAddr(addr)} (WalletConnect · real)`;
+  $("walletLabel").title = `${addr}\nConnected via WalletConnect session ${session.topic.slice(0, 12)}…`;
+  $("localAcctReset").style.display = "none";
+  $("localAcctBtn").textContent = shortAddr(addr);
+  logLine(`WalletConnect session active · ${shortAddr(addr)} · topic ${session.topic.slice(0, 8)}…`);
+  checkWalletVerified();
+  document.dispatchEvent(new CustomEvent("wallet-connected"));
+  if (!opts.silent) {
+    setQrStatus(`Connected: ${shortAddr(addr)}`);
+    setTimeout(closeWalletModal, 900);
   }
+  return true;
 }
 
 // Real WalletConnect v2 pairing: SignClient connects to the relay, generates a
@@ -464,24 +533,19 @@ async function showWalletConnectQR() {
   }
 
   try {
-    // Fresh client per pairing (cheap, avoids stale session state)
-    if (wcSignClient) { try { wcSignClient = null; } catch (e) {} }
-    wcSignClient = await window.WalletConnectSignClient.init({
-      projectId: window.WC_PROJECT_ID,
-      metadata: {
-        name: "ArtistLedger",
-        description: "Onchain artist provenance & ownership proofs",
-        url: location.origin,
-        icons: [],
-      },
-    });
-    setQrStatus("Pairing… scan the QR with your mobile wallet");
+    // 1. Already have a live session (this visit or a previous one)? Reuse it —
+    //    no re-scan needed. This is the "asks me to connect again" fix.
+    const client = await ensureWcClient();
+    const existing = client.session.values.find(s => s.topic === localStorage.getItem(WC_TOPIC_KEY))
+      || client.session.values[0];
+    if (existing && adoptWcSession(existing)) return;
 
-    const { uri, approval } = await wcSignClient.connect({
-      optionalNamespaces: {
+    setQrStatus("Pairing… scan the QR with your mobile wallet");
+    const { uri, approval } = await client.connect({
+      requiredNamespaces: {
         eip155: {
           chains: ["eip155:1"],
-          methods: ["personal_sign", "eth_sendTransaction", "eth_signTypedData_v4"],
+          methods: ["personal_sign", "eth_sendTransaction", "eth_signTypedData_v4", "wallet_addEthereumChain"],
           events: ["chainChanged", "accountsChanged"],
         },
       },
@@ -513,32 +577,23 @@ async function showWalletConnectQR() {
       return;
     }
     wcPairingAbort = null;
-    wcSessionTopic = session.topic;
-
-    const eip155 = session.namespaces?.eip155;
-    const accounts = eip155?.accounts || [];
-    const walletAddr = accounts[0]?.split(":")[2];
-    if (!walletAddr) {
-      setQrStatus("Wallet returned no account", true);
-      return;
-    }
-
-    setQrStatus(`Connected: ${walletAddr.slice(0, 6)}…${walletAddr.slice(-4)}`);
-    logLine(`WalletConnect session established · topic ${session.topic.slice(0, 8)}…`);
-    $("walletLabel").textContent = `${shortAddr(walletAddr)} (WalletConnect · real)`;
-    $("walletLabel").title = `${walletAddr}\nConnected via WalletConnect session ${session.topic.slice(0, 12)}…`;
-    $("localAcctReset").style.display = "none";
-    $("localAcctBtn").textContent = shortAddr(walletAddr);
-    walletKind = "real";
-    checkWalletVerified();
-    document.dispatchEvent(new CustomEvent("wallet-connected"));
-    setTimeout(closeWalletModal, 900);
+    adoptWcSession(session);
   } catch (e) {
     console.error("[walletconnect]", e);
     setQrStatus(`Pairing failed: ${e.message || e}`, true);
     container.innerHTML = `<div style="padding:20px;text-align:center;color:#000;font-family:var(--mono);font-size:11px">Pairing failed</div>`;
   }
 }
+
+// Boot: silently restore a previous WalletConnect session (no QR, no scan).
+(async () => {
+  try {
+    if (!localStorage.getItem(WC_TOPIC_KEY)) return;
+    const client = await ensureWcClient();
+    const existing = client.session.values.find(s => s.topic === localStorage.getItem(WC_TOPIC_KEY));
+    if (existing) adoptWcSession(existing, { silent: true });
+  } catch (e) { console.warn("[walletconnect] restore failed:", e.message); }
+})();
 
 function renderWalletList() {
   const list = $("walletList");
