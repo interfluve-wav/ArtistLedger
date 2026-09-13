@@ -222,6 +222,23 @@
     background: #050505; color: var(--ok); font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
   }
   .own-token-row .btn { padding: 9px 13px; font-size: 11px; flex-shrink: 0; }
+  /* verified-wallet collapse: banner stays, proof chrome hides */
+  .own-panel-collapsed .section-label,
+  .own-panel-collapsed .ownership-intro,
+  .own-panel-collapsed .own-token-row,
+  .own-panel-collapsed #own-rows,
+  .own-panel-collapsed #own-add { display: none !important; }
+  #own-panel { transition: opacity .3s ease, max-height .4s ease; }
+  .own-verified-banner {
+    display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px;
+    border: 1px solid rgba(52,211,153,.35); border-radius: var(--r-md);
+    background: rgba(52,211,153,.07); color: var(--ok); font-size: 12px; line-height: 1.55;
+  }
+  .own-verified-ico {
+    width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+    background: var(--ok); color: #050505; font-weight: 700;
+    display: grid; place-items: center; font-size: 13px;
+  }
   .own-row { display: grid; grid-template-columns: 128px 1fr 30px; gap: var(--s2); margin-bottom: var(--s2); align-items: center; }
   .own-row select, .own-row input {
     padding: 8px 10px; font-size: 12px; background: #050505; color: var(--ink);
@@ -550,18 +567,27 @@
 
           <!-- ── Prove it's you: ownership proofs (Tier 2.6) ── -->
           <div class="section-divider"></div>
-          <div class="section-label">
-            <h2>Prove it's you <span style="color:var(--ok);font-size:10px;font-family:var(--mono);letter-spacing:.08em">+12 PER CHANNEL · MAX 2</span></h2>
-            <span class="hint">optional · strongest signal</span>
+          <div id="own-panel">
+            <div id="own-verified-banner" style="display:none" class="own-verified-banner">
+              <span class="own-verified-ico">✓</span>
+              <div>
+                <b>Already verified</b> — this wallet's artist is certified on-chain.
+                The proof step collapses; submit or inspect your certificate directly.
+              </div>
+            </div>
+            <div class="section-label">
+              <h2>Prove it's you <span style="color:var(--ok);font-size:10px;font-family:var(--mono);letter-spacing:.08em">+12 PER CHANNEL · MAX 2</span></h2>
+              <span class="hint">optional · strongest signal</span>
+            </div>
+            <p class="ownership-intro">Paste the token below into the bio/about of profiles you control, add the handle, and the validators will find it. Last.fm accounts need 200+ lifetime scrobbles (no fresh accounts).</p>
+            <div class="own-token-row">
+              <input id="own-token" readonly title="Your ownership token — paste into platform bios">
+              <button class="btn ghost" id="own-copy">Copy</button>
+              <button class="btn ghost" id="own-regen" title="Regenerate token">↻</button>
+            </div>
+            <div id="own-rows"></div>
+            <button class="btn link" id="own-add" style="margin-top:8px">+ add a platform</button>
           </div>
-          <p class="ownership-intro">Paste the token below into the bio/about of profiles you control, add the handle, and the validators will find it. Last.fm accounts need 200+ lifetime scrobbles (no fresh accounts).</p>
-          <div class="own-token-row">
-            <input id="own-token" readonly title="Your ownership token — paste into platform bios">
-            <button class="btn ghost" id="own-copy">Copy</button>
-            <button class="btn ghost" id="own-regen" title="Regenerate token">↻</button>
-          </div>
-          <div id="own-rows"></div>
-          <button class="btn link" id="own-add" style="margin-top:8px">+ add a platform</button>
 
           <div class="checkboxes">
             <label><input type="checkbox" id="fStrict" checked> Strict mode (require both sources)</label>

@@ -183,6 +183,69 @@ function attachAccount(pk) {
   $("walletLabel").textContent = shortAddr(walletAddr) + " (local · disposable)";
   $("walletLabel").title = "Disposable testnet key, stored in browser storage (plaintext). Use Reset key to rotate.";
   $("localAcctReset").style.display = "inline-flex";
+  checkWalletVerified();
+}
+
+// If this wallet's artist is already certified on-chain, collapse the
+// "Prove it's you" proof panel, surface the verified banner, and
+// auto-advance to the certificate screen.
+async function checkWalletVerified() {
+  const panel = $("own-panel");
+  const banner = $("own-verified-banner");
+  if (!walletAddr || !panel || !banner) return;
+  try {
+    const artist = await rpcRead("get_artist", [walletAddr]);
+    if (artist && artist.verified) {
+      panel.classList.add("own-panel-collapsed");
+      banner.style.display = "flex";
+      logLine("wallet " + shortAddr(walletAddr) + " already verified (" +
+              (artist.name || "unknown") + ", score " + (artist.score ?? "?") +
+              ") — proof step collapsed");
+      renderVerifiedCert(artist);
+    } else {
+      panel.classList.remove("own-panel-collapsed");
+      banner.style.display = "none";
+    }
+  } catch (e) {
+    // RPC unreachable or contract mismatch — leave the panel open.
+    panel.classList.remove("own-panel-collapsed");
+    banner.style.display = "none";
+  }
+}
+
+// Render the certificate view straight from an on-chain artist record
+// (no fresh submission needed). Steps: B (cert) + enable C (inspect).
+function renderVerifiedCert(artist) {
+  const certEl = $("cert"), modalEl = $("modal");
+  $("cert-name").textContent = artist.name || "—";
+  $("cert-subtitle").textContent = `verified on-chain · score ${artist.score ?? "?"} · ${new Date().toISOString().slice(0, 16).replace("T", " · ")} UTC`;
+  const seal = $("cert-seal");
+  seal.textContent = "VRFD";
+  seal.className = "seal ok";
+  $("cert-wallet").textContent = walletAddr || "—";
+  $("cert-wallet").title = walletAddr || "";
+  $("cert-handle").textContent = "@" + (artist.name || "artist").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  $("cert-date").textContent = new Date().toISOString().slice(0, 16).replace("T", " · ") + " UTC";
+  $("cert-score").textContent = `${artist.score ?? "?"}/100 strict · already certified`;
+  $("cert-two-meta").textContent = "on-chain record";
+  if (artist.name) fetchArtistPortrait(artist.name);
+  else $("cert-photo").style.display = "none";
+  // mirror the standard go("B") transition (defined later in this file)
+  $("stepB").disabled = false;
+  $("stepC").disabled = false;
+  modalEl.classList.remove("open");
+  if (splitEl && !splitEl.classList.contains("hidden")) {
+    splitEl.classList.add("fading");
+    setTimeout(() => {
+      splitEl.classList.add("hidden");
+      certEl.classList.add("active");
+      window.scrollTo(0, 0);
+      setActive("B");
+    }, 450);
+  } else {
+    certEl.classList.add("active");
+    setActive("B");
+  }
 }
 
 $("localAcctBtn").addEventListener("click", () => {
