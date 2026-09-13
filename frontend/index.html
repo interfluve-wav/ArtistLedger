@@ -544,6 +544,137 @@
     text-decoration: underline;
   }
 
+  /* ═════════════ WALLETCONNECT QR VIEW ═════════════ */
+  .wallet-qr-view {
+    padding: 16px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    animation: qrFadeIn .2s ease;
+  }
+  @keyframes qrFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .qr-nav {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .qr-back-btn {
+    background: transparent;
+    border: none;
+    color: var(--ink-2);
+    font-size: 11px;
+    cursor: pointer;
+    font-family: var(--mono);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: color 0.15s;
+  }
+  .qr-back-btn:hover { color: #fff; }
+  .qr-step {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--ink-3);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .qr-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+    margin-bottom: 14px;
+    border: 3px solid #1f1f24;
+  }
+  .qr-canvas-holder {
+    width: 220px;
+    height: 220px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+  }
+  .qr-canvas-holder img, .qr-canvas-holder canvas, .qr-canvas-holder svg {
+    max-width: 100%;
+    height: auto;
+  }
+  .qr-instruction {
+    margin-top: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #18181b;
+  }
+  .qr-supported-badges {
+    display: flex;
+    gap: 5px;
+    margin-top: 6px;
+  }
+  .qr-supported-badges span {
+    font-size: 9px;
+    background: #f4f4f5;
+    color: #71717a;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .qr-actions {
+    width: 100%;
+    margin-bottom: 12px;
+  }
+  .qr-copy-btn {
+    width: 100%;
+    padding: 9px 14px;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .qr-manual-row {
+    width: 100%;
+    border-top: 1px solid #18181b;
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .qr-manual-divider {
+    font-size: 10px;
+    color: var(--ink-3);
+    text-align: center;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+  }
+  .qr-input-box {
+    display: flex;
+    gap: 6px;
+  }
+  .qr-input-box input {
+    flex: 1;
+    background: #111116;
+    border: 1px solid #22222a;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #fff;
+  }
+  .qr-input-box input:focus {
+    outline: none;
+    border-color: var(--blue);
+  }
+  .qr-input-box button {
+    padding: 8px 14px;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
   /* ═════════════ flow controller ═════════════ */
   .flow-bar {
     position: fixed; bottom: var(--s3); right: var(--s3);
@@ -887,6 +1018,33 @@
     <div class="wallet-list" id="walletList">
       <!-- Options rendered dynamically with detection status -->
     </div>
+
+    <!-- QR Code Sub-View inside the modal -->
+    <div class="wallet-qr-view" id="walletQrView" style="display:none">
+      <div class="qr-nav">
+        <button class="qr-back-btn" id="qrBackBtn">← All wallets</button>
+        <span class="qr-step">WalletConnect QR</span>
+      </div>
+      <div class="qr-card">
+        <div id="qrCodeContainer" class="qr-canvas-holder"></div>
+        <div class="qr-instruction">Scan with any mobile wallet app</div>
+        <div class="qr-supported-badges">
+          <span>1inch</span><span>Rainbow</span><span>MetaMask</span><span>Trust</span><span>Phantom</span>
+        </div>
+      </div>
+      <div class="qr-actions">
+        <button class="btn ghost qr-copy-btn" id="qrCopyBtn">
+          <iconify-icon icon="solar:copy-linear" width="13"></iconify-icon> <span id="qrCopyText">Copy pairing URI</span>
+        </button>
+      </div>
+      <div class="qr-manual-row">
+        <span class="qr-manual-divider">or connect by address</span>
+        <div class="qr-input-box">
+          <input id="qrManualAddress" placeholder="0x... your wallet address" spellcheck="false" autocomplete="off">
+          <button id="qrManualBtn" class="btn">Connect</button>
+        </div>
+      </div>
+    </div>
     <div class="wallet-modal-foot">
       <span>GenLayer Studionet (Chain ID 61999)</span>
       <a href="https://ethereum.org/en/wallets/" target="_blank" rel="noopener">What is a wallet? ↗</a>
@@ -1152,6 +1310,7 @@
   }).observe(document.getElementById('live-badge'), { childList: true, characterData: true, subtree: true });
 </script>
 
+<script src="lib/qrcode.min.js"></script>
 <script src="lib/genlayer-sdk.js"></script>
 <script src="app.js"></script>
 </body>

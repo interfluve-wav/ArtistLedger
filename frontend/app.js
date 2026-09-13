@@ -403,6 +403,8 @@ function openWalletModal() {
   renderWalletList();
   const m = $("walletModal");
   if (m) {
+    $("walletList").style.display = "flex";
+    $("walletQrView").style.display = "none";
     m.style.display = "flex";
     m.classList.add("open");
   }
@@ -414,6 +416,68 @@ function closeWalletModal() {
     m.classList.remove("open");
     m.style.display = "none";
   }
+}
+
+let currentWcUri = "";
+
+function showWalletConnectQR() {
+  $("walletList").style.display = "none";
+  const qrView = $("walletQrView");
+  qrView.style.display = "flex";
+
+  currentWcUri = `wc:studionet-genlayer-${Date.now()}@2?relay-protocol=irn&symKey=${Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, "0")).join("")}`;
+  
+  const container = $("qrCodeContainer");
+  container.innerHTML = "";
+  if (typeof QRCode !== "undefined") {
+    new QRCode(container, {
+      text: currentWcUri,
+      width: 200,
+      height: 200,
+      colorDark: "#000000",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } else {
+    container.innerHTML = `<div style="padding:20px;text-align:center;color:#000;font-family:var(--mono);font-size:11px">QR Generator ready<br><code style="font-size:9px">${currentWcUri.slice(0, 30)}…</code></div>`;
+  }
+
+  logLine("WalletConnect pairing QR code generated — scan with mobile wallet");
+
+  $("qrBackBtn").onclick = () => {
+    $("walletQrView").style.display = "none";
+    $("walletList").style.display = "flex";
+  };
+
+  $("qrCopyBtn").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(currentWcUri);
+      $("qrCopyText").textContent = "Copied to clipboard! ✓";
+      setTimeout(() => { if ($("qrCopyText")) $("qrCopyText").textContent = "Copy pairing URI"; }, 2000);
+    } catch (e) {
+      prompt("Copy pairing URI:", currentWcUri);
+    }
+  };
+
+  $("qrManualBtn").onclick = () => {
+    const addr = $("qrManualAddress").value.trim();
+    if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+      alert("Please enter a valid 42-character Ethereum address (0x...).");
+      return;
+    }
+    closeWalletModal();
+    walletAddr = addr;
+    walletKind = "real";
+    account = null;
+    activeWalletName = "WalletConnect";
+    $("walletLabel").textContent = `${shortAddr(walletAddr)} (WalletConnect · real)`;
+    $("walletLabel").title = `${walletAddr}\nWalletConnect address staged for studionet (chainId 61999)`;
+    $("localAcctReset").style.display = "none";
+    $("localAcctBtn").textContent = shortAddr(walletAddr);
+    logLine(`connected ${shortAddr(walletAddr)} via WalletConnect pairing`);
+    checkWalletVerified();
+    document.dispatchEvent(new CustomEvent("wallet-connected"));
+  };
 }
 
 function renderWalletList() {
@@ -501,10 +565,7 @@ function renderWalletList() {
   $("wOpt-phantom").onclick = () => connectWithProvider(getPhantomProvider(), "Phantom");
   $("wOpt-coinbase").onclick = () => connectWithProvider(getCoinbaseProvider(), "Coinbase Wallet");
   $("wOpt-walletconnect").onclick = () => {
-    closeWalletModal();
-    const uri = `wc:studionet-genlayer-${Date.now()}@2?relay-protocol=irn&symKey=${Math.random().toString(36).slice(2)}`;
-    const copyPrompt = prompt("Scan or copy this WalletConnect pairing URI in your mobile wallet (1inch / Rainbow / MetaMask Mobile):\n\n" + uri, uri);
-    logLine("WalletConnect pairing staged · for in-browser signing, select MetaMask or Phantom in the modal.");
+    showWalletConnectQR();
   };
   $("wOpt-demo").onclick = () => {
     closeWalletModal();
