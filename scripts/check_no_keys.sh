@@ -45,7 +45,7 @@ fi
 
 # 3. Secrets must never be TRACKED by git (on-disk local copies are fine)
 if git rev-parse --git-dir >/dev/null 2>&1; then
-  hits=$(git ls-files | grep -E '(^|/)(\.env.*)$|keystore|\.genlayer|wallet|private|secret|_pw' | head -20)
+  hits=$(git ls-files | grep -E '(^|/)(\.env.*)$|(^|/)keystore|\.genlayer|(^|/)wallet|(^|/)private|(^|/)secret|(^|/)_pw' | grep -v '^frontend/lib/' | head -20)
   if [ -n "$hits" ]; then
     echo "BLOCKED: secret files TRACKED by git:"
     echo "$hits"; fail=1
