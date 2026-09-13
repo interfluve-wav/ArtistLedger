@@ -4,13 +4,10 @@
  */
 "use strict";
 
-// Deployed v0.3.4 on studionet. The v0.3.5 fix (Apple Music co-artist guard)
-// is committed in git (commit d20a536) but the redeploy via genlayer CLI
-// reported ACCEPTED yet the consensus node config says "contract_not_found_handler",
-// meaning the contract isn't visible to validators — the deploy is parked
-// pending the studio deployment-pipeline coming back online.
-// Until that resolves, we stay on v0.3.4 + the lenient rubric.
-const CONTRACT = "0x703AdAB82751A9006aFE9c477DC344f8D9CA4384";
+// Deployed on studionet (2026-09-13, gasless): all features incl.
+// ownership proofs + key pools. Verified: schema OK, 12 methods,
+// 5/5 validators AGREE on deploy + writes. See docs/OPERATIONS.md.
+const CONTRACT = "0x214DBC690f02d2651B4564771fB1094D3A1FDB76";
 const GL = window.GenLayerSDK;
 
 let walletAddr = null;    // connected wallet
