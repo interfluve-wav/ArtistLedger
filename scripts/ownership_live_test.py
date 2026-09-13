@@ -36,6 +36,12 @@ def load_env():
 
 env = load_env()
 lastfm_pool = [k for k in env.get("LASTFM_KEY_POOL", "").split(",") if k]
+spotify_pairs = []
+for i in (1, 2, 3):
+    cid = env.get(f"SPOTIFY_CLIENT_ID{'' if i == 1 else '_' + str(i)}", "")
+    sec = env.get(f"SPOTIFY_CLIENT_SECRET{'' if i == 1 else '_' + str(i)}", "")
+    if cid and sec:
+        spotify_pairs.append((cid, sec))
 
 # import gl stubs first (same pattern as tests)
 import types, json, urllib.request
@@ -84,7 +90,7 @@ def main():
     ap.add_argument("--soundcloud", default="")
     ap.add_argument("--youtube", default="")
     ap.add_argument("--lastfm", default="")
-    ap.add_argument("--artist", default="", help="artist name for Last.fm scrobble check")
+    ap.add_argument("--artist", default="", help="artist name for Spotify binding + Last.fm scrobble check")
     args = ap.parse_args()
 
     results = []
@@ -120,6 +126,34 @@ def main():
                 ))
         except Exception as e:
             results.append((f"Last.fm @{args.lastfm}", False, f"ERROR: {e}"))
+
+    if args.artist:
+        # Spotify binding: search for the artist, confirm the top hit's name
+        # overlaps the claim (same logic as the contract's tier-1 check).
+        try:
+            if not spotify_pairs:
+                results.append(("Spotify", False, "SKIPPED: no SPOTIFY_CLIENT_ID in .env"))
+            else:
+                tok = ""
+                for cid, sec in spotify_pairs:  # pool rotation
+                    tok = prov._spotify_mint_token(cid, sec)
+                    if tok:
+                        break
+                if not tok:
+                    results.append(("Spotify", False, "ERROR: all client-cred pairs failed to mint"))
+                else:
+                    sp = prov._spotify_search(args.artist, tok)
+                    if sp:
+                        bound = sp.get("_name_matched", False)
+                        results.append((
+                            f"Spotify artist '{args.artist}'",
+                            bound,
+                            f"top hit: '{sp.get('name', '')}' ({sp.get('id', '')[:10]}…) — name {'bound' if bound else 'NOT bound'}"
+                        ))
+                    else:
+                        results.append((f"Spotify artist '{args.artist}'", False, "no search result"))
+        except Exception as e:
+            results.append((f"Spotify artist '{args.artist}'", False, f"ERROR: {e}"))
 
     print("=" * 70)
     for name, ok, detail in results:
