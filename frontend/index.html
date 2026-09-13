@@ -1231,67 +1231,67 @@
 
     if (m === 'composing') {
       if (details.name) {
-        chip2K.textContent = 'Artist Staged';
-        chip2V.textContent = details.name;
-        chipConsensus.textContent = details.sources ? `${details.sources} SOURCES READY` : 'PROFILES_STAGED';
-        chipConsensusDot.className = 'dot-pulse';
+        if (chip2K) chip2K.textContent = 'Artist Staged';
+        if (chip2V) chip2V.textContent = details.name;
+        if (chipConsensus) chipConsensus.textContent = details.sources ? `${details.sources} SOURCES READY` : 'PROFILES_STAGED';
+        if (chipConsensusDot) chipConsensusDot.className = 'dot-pulse';
       }
     } else if (m === 'connected') {
       if (details.wallet) {
-        chip2K.textContent = 'Signer';
-        chip2V.textContent = details.wallet.slice(0, 6) + '…' + details.wallet.slice(-4);
-        chipVal.textContent = 'WALLET_CONNECTED';
+        if (chip2K) chip2K.textContent = 'Signer';
+        if (chip2V) chip2V.textContent = details.wallet.slice(0, 6) + '…' + details.wallet.slice(-4);
+        if (chipVal) chipVal.textContent = 'WALLET_CONNECTED';
       }
     } else if (m === 'building') {
-      chipVal.textContent = 'CALLDATA_ASSEMBLY';
-      chipValDot.className = 'dot-pulse';
-      chip2K.textContent = 'Step 01';
-      chip2V.textContent = 'Building Calldata';
-      chipConsensus.textContent = 'PACKET_ORCHESTRATION';
-      chipConsensusDot.className = 'dot-pulse';
+      if (chipVal) chipVal.textContent = 'CALLDATA_ASSEMBLY';
+      if (chipValDot) chipValDot.className = 'dot-pulse';
+      if (chip2K) chip2K.textContent = 'Step 01';
+      if (chip2V) chip2V.textContent = 'Building Calldata';
+      if (chipConsensus) chipConsensus.textContent = 'PACKET_ORCHESTRATION';
+      if (chipConsensusDot) chipConsensusDot.className = 'dot-pulse';
     } else if (m === 'signing') {
-      chipVal.textContent = 'VAL.AWAIT_SIGN';
-      chipValDot.className = 'dot-pulse warn';
-      chip2K.textContent = 'Step 02';
-      chip2V.textContent = 'Awaiting Wallet';
-      chipConsensus.textContent = 'METAMASK_APPROVAL';
-      chipConsensusDot.className = 'dot-pulse';
+      if (chipVal) chipVal.textContent = 'VAL.AWAIT_SIGN';
+      if (chipValDot) chipValDot.className = 'dot-pulse warn';
+      if (chip2K) chip2K.textContent = 'Step 02';
+      if (chip2V) chip2V.textContent = 'Awaiting Wallet';
+      if (chipConsensus) chipConsensus.textContent = 'METAMASK_APPROVAL';
+      if (chipConsensusDot) chipConsensusDot.className = 'dot-pulse';
     } else if (m === 'broadcasting') {
-      chipVal.textContent = 'TX_PROPAGATING';
-      chipValDot.className = 'dot-pulse';
-      chip2K.textContent = 'Step 02';
-      chip2V.textContent = details.hash ? details.hash.slice(0, 10) + '…' : 'Mempool Broadcast';
-      chipConsensus.textContent = 'DISPATCHED_TO_STUDIONET';
-      chipConsensusDot.className = 'dot-pulse';
+      if (chipVal) chipVal.textContent = 'TX_PROPAGATING';
+      if (chipValDot) chipValDot.className = 'dot-pulse';
+      if (chip2K) chip2K.textContent = 'Step 02';
+      if (chip2V) chip2V.textContent = details.hash ? details.hash.slice(0, 10) + '…' : 'Mempool Broadcast';
+      if (chipConsensus) chipConsensus.textContent = 'DISPATCHED_TO_STUDIONET';
+      if (chipConsensusDot) chipConsensusDot.className = 'dot-pulse';
     } else if (m === 'verifying') {
-      chipVal.textContent = 'VAL.CMT_4/4_VOTING';
-      chipValDot.className = 'dot-pulse';
-      chip2K.textContent = 'Step 03';
-      chip2V.textContent = 'Leader + 4 Vals';
-      chipConsensus.textContent = 'EVALUATING_PROOFS';
-      chipConsensusDot.className = 'dot-pulse';
+      if (chipVal) chipVal.textContent = 'VAL.CMT_4/4_VOTING';
+      if (chipValDot) chipValDot.className = 'dot-pulse';
+      if (chip2K) chip2K.textContent = 'Step 03';
+      if (chip2V) chip2V.textContent = 'Leader + 4 Vals';
+      if (chipConsensus) chipConsensus.textContent = 'EVALUATING_PROOFS';
+      if (chipConsensusDot) chipConsensusDot.className = 'dot-pulse';
     } else if (m === 'consensus') {
       GLOBE.burstAt = performance.now();
-      chipVal.textContent = 'VAL.CMT_4/4_ACCEPTED';
-      chipValDot.className = 'dot-pulse green';
-      chip2K.textContent = 'Consensus';
-      chip2V.textContent = details.score ? `${details.score}/100 VRFD` : 'MAJORITY_AGREED';
-      chipConsensus.textContent = 'CONSENSUS_REACHED';
-      chipConsensusDot.className = 'dot-pulse green';
+      if (chipVal) chipVal.textContent = 'VAL.CMT_4/4_ACCEPTED';
+      if (chipValDot) chipValDot.className = 'dot-pulse green';
+      if (chip2K) chip2K.textContent = 'Consensus';
+      if (chip2V) chip2V.textContent = details.score ? `${details.score}/100 VRFD` : 'MAJORITY_AGREED';
+      if (chipConsensus) chipConsensus.textContent = 'CONSENSUS_REACHED';
+      if (chipConsensusDot) chipConsensusDot.className = 'dot-pulse green';
     } else if (m === 'error') {
-      chipVal.textContent = 'SYS.EXEC_ERROR';
-      chipValDot.className = 'dot-pulse err';
-      chip2K.textContent = 'Status';
-      chip2V.textContent = 'Reverted';
-      chipConsensus.textContent = 'TRANSACTION_FAILED';
-      chipConsensusDot.className = 'dot-pulse err';
+      if (chipVal) chipVal.textContent = 'SYS.EXEC_ERROR';
+      if (chipValDot) chipValDot.className = 'dot-pulse err';
+      if (chip2K) chip2K.textContent = 'Status';
+      if (chip2V) chip2V.textContent = 'Reverted';
+      if (chipConsensus) chipConsensus.textContent = 'TRANSACTION_FAILED';
+      if (chipConsensusDot) chipConsensusDot.className = 'dot-pulse err';
     } else {
-      chipConsensus.textContent = 'AWAITING_SUBMISSION';
-      chipConsensusDot.className = 'dot-pulse idle';
-      chipVal.textContent = 'VAL.CMT_4/4_ACTIVE';
-      chipValDot.className = 'dot-pulse';
-      chip2K.textContent = 'Threshold';
-      chip2V.textContent = '70 / 100 strict';
+      if (chipConsensus) chipConsensus.textContent = 'AWAITING_SUBMISSION';
+      if (chipConsensusDot) chipConsensusDot.className = 'dot-pulse idle';
+      if (chipVal) chipVal.textContent = 'VAL.CMT_4/4_ACTIVE';
+      if (chipValDot) chipValDot.className = 'dot-pulse';
+      if (chip2K) chip2K.textContent = 'Threshold';
+      if (chip2V) chip2V.textContent = '70 / 100 strict';
     }
   };
 
