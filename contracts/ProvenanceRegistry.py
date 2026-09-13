@@ -1165,6 +1165,7 @@ class ProvenanceRegistry(gl.Contract):
     etherscan_key: str
     spotify_client_id: str
     spotify_client_secret: str
+    spotify_client_pairs: list = []   # list of [client_id, client_secret] — rate-limit pool
 
     def __init__(self):
         """Schema constructor (required by GenVM). API keys default to
@@ -1176,6 +1177,7 @@ class ProvenanceRegistry(gl.Contract):
         self.etherscan_key = ""
         self.spotify_client_id = ""
         self.spotify_client_secret = ""
+        self.spotify_client_pairs = []
 
     def _now(self) -> int:
         """Consensus-safe transaction timestamp (unix seconds).
@@ -1240,6 +1242,24 @@ class ProvenanceRegistry(gl.Contract):
     def get_lastfm_pool_size(self) -> int:
         return len(self.lastfm_key_pool)
 
+    @gl.public.write
+    def set_spotify_key_pool(self, pairs: list) -> str:
+        """Seed the Spotify client-credentials pool (rate-limit failover).
+
+        Each entry is [client_id, client_secret]. Minting rotates through
+        the pool on failure (401/429); the single pair from set_api_keys
+        is the fallback when the pool is empty or exhausted.
+        """
+        self.spotify_client_pairs = [
+            [str(p[0]), str(p[1])] for p in pairs
+            if isinstance(p, (list, tuple)) and len(p) >= 2 and p[0] and p[1]
+        ]
+        return f"Spotify key pool set ({len(self.spotify_client_pairs)} pairs)"
+
+    @gl.public.view
+    def get_spotify_pool_size(self) -> int:
+        return len(self.spotify_client_pairs)
+
     # ─── Identity verification ─────────────────────────────────────────────
 
     @gl.public.write
@@ -1280,8 +1300,13 @@ class ProvenanceRegistry(gl.Contract):
             # path consistent.
             acoustid_key = self.acoustid_key
             spotify_token = self.spotify_token
-            # Fallback: mint a short-lived bearer from client creds when the
-            # operator only stored a client id/secret pair (no OAuth flow).
+            # Spotify: try the pool first (rate-limit failover), then the
+            # single client pair, then any stored long-lived token.
+            if not spotify_token:
+                for pair in self.spotify_client_pairs:
+                    spotify_token = _spotify_mint_token(pair[0], pair[1])
+                    if spotify_token:
+                        break
             if not spotify_token and self.spotify_client_id and self.spotify_client_secret:
                 spotify_token = _spotify_mint_token(self.spotify_client_id,
                                                     self.spotify_client_secret)

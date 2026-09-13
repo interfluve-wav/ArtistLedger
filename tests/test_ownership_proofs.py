@@ -385,3 +385,38 @@ def test_pool_resolve_rotates_on_error(monkeypatch):
     monkeypatch.setattr(prov, "_http_get_json", fake_get)
     assert _lastfm_resolve_artist("cher", ["k1", "k2"]) == "Cher"
     assert len(calls) == 2
+
+
+# ─── Spotify client-credentials pool ──────────────────────────────────────
+
+def test_set_spotify_key_pool_filters_bad_entries():
+    inst = prov.ProvenanceRegistry()
+    out = inst.set_spotify_key_pool([["cid1", "csec1"], ["cid2", ""], "junk", ["ok", "sec", "extra"]])
+    assert out == "Spotify key pool set (2 pairs)"
+    assert inst.get_spotify_pool_size() == 2
+    assert inst.spotify_client_pairs == [["cid1", "csec1"], ["ok", "sec"]]
+
+
+def test_spotify_pool_rotates_on_failed_mint(monkeypatch):
+    calls = []
+    def fake_mint(cid, sec):
+        calls.append((cid, sec))
+        if len(calls) == 1:
+            return ""
+        return "bearer-ok"
+    monkeypatch.setattr(prov, "_spotify_mint_token", fake_mint)
+    pairs = [["bad-id", "bad-sec"], ["good-id", "good-sec"]]
+    # simulate leader_collect's mint loop
+    tok = ""
+    for pair in pairs:
+        tok = prov._spotify_mint_token(pair[0], pair[1])
+        if tok:
+            break
+    assert tok == "bearer-ok"
+    assert len(calls) == 2  # rotated to second pair
+
+
+def test_spotify_pool_empty_falls_back(monkeypatch):
+    # pool empty + no stored pair -> no token
+    monkeypatch.setattr(prov, "_spotify_mint_token", lambda a, b: "")
+    assert prov._spotify_mint_token("x", "y") == ""
