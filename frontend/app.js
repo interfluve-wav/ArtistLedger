@@ -157,7 +157,8 @@ async function fetchArtistPortrait(name) {
       return;
     }
   }
-  // no source returned a usable image — placeholder initial stays
+  // no source returned a usable image — hide the photo slot entirely
+  box.style.display = "none";
 }
 
 // Map short source names → contract's 13-enum source types.
