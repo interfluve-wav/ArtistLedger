@@ -1092,6 +1092,7 @@ function parseReceipt(receipt) {
     if (Number(e.wallet_age_days) >= 90) matched.push({ label: "Wallet age", verdict: "≥90d", detail: `${Number(e.wallet_age_days).toLocaleString()} days`, raw: `wallet first seen ${Number(e.wallet_age_days).toLocaleString()} days ago` });
     if (e.ens_matches_artist || e.farcaster_fname) matched.push({ label: "Wallet name", verdict: "match", detail: e.ens_name || e.farcaster_fname, raw: `on-chain name binds the wallet to the artist identity (${e.ens_name ? "ENS" : "Farcaster"})` });
     if (Number(e.isrc_codes?.length || 0) > 0) matched.push({ label: "ISRC codes", verdict: "found", detail: `${e.isrc_codes.length} codes`, raw: e.isrc_codes.join(", ") });
+    if (e.llm_identity_match === false) matched.push({ label: "AI identity check", verdict: "mismatch", detail: "sources describe a different entity", raw: "the LLM identity guard judged the collected sources inconsistent with the claimed artist name — score capped below verification threshold" });
   }
   return { score, verdict, evidence, matched, matchCount: evidence ? Number(evidence.verification_match_count || 0) : 0 };
 }

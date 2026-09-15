@@ -50,6 +50,7 @@ W_WALLET_NAME = 5
 W_LLM_ADJUSTMENT_RANGE = 5
 
 VERIFICATION_THRESHOLD = 70
+DISPUTE_UPHOLD_THRESHOLD = 60
 
 
 def plausibility_guards(leader_dict: dict, source_urls: dict | None = None) -> bool:
@@ -139,6 +140,9 @@ def score_evidence_from_dict(d: dict, name: str) -> int:
         # Tier 3 (LLM, ±5)
         press = int(d.get("press_narrative_score", 0) or 0)
         score += max(-W_LLM_ADJUSTMENT_RANGE, min(W_LLM_ADJUSTMENT_RANGE, press))
+        # Tier 3b — LLM identity guard (keep in sync with contract)
+        if d.get("llm_identity_match", True) is False:
+            score = min(score, int(DISPUTE_UPHOLD_THRESHOLD) - 1)
         return max(0, min(100, score))
     except Exception:
         return 0
@@ -361,3 +365,33 @@ def test_phantom_with_only_tier2_signals_rejected():
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v", "--no-header"]))
+
+
+# ─── LLM identity guard (Tier 3b) ────────────────────────────────────────
+
+def test_identity_match_absent_scores_normally():
+    """Old receipts / stubs have no llm_identity_match — scoring unchanged."""
+    d = burial_full_evidence()
+    d.pop("llm_identity_match", None)
+    assert score_evidence_from_dict(d, "Burial") >= 70
+
+
+def test_identity_mismatch_caps_below_verification():
+    """LLM says DIFFERENT_ENTITY -> score capped below 70 even if evidence is rich."""
+    d = burial_full_evidence()
+    d["llm_identity_match"] = False
+    assert score_evidence_from_dict(d, "Burial") < 70
+
+
+def test_identity_true_scores_normally():
+    d = burial_full_evidence()
+    d["llm_identity_match"] = True
+    assert score_evidence_from_dict(d, "Burial") >= 70
+
+
+def test_identity_mismatch_caps_at_dispute_threshold_minus_one():
+    """Cap point is exactly DISPUTE_UPHOLD_THRESHOLD - 1 (59)."""
+    d = burial_full_evidence()
+    d["llm_identity_match"] = False
+    score = score_evidence_from_dict(d, "Burial")
+    assert score == 59  # rich evidence; cap is what pulls it under 70
