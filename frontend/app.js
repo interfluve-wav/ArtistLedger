@@ -35,7 +35,35 @@ const WIKI_TITLES = {
 // api.deezer.com omits Access-Control-Allow-Origin — browser fetches are
 // blocked by CORS, so it only works in non-browser contexts. Kept as a
 // harmless last resort for potential future server-side use.
-const PHOTO_SOURCES = ["wikipedia", "musicbrainz", "deezer"];
+const PHOTO_SOURCES = ["wikipedia", "theaudiodb", "musicbrainz", "deezer"];
+
+async function fetchFromTheAudioDB(name) {
+  // Failsafe source: TheAudioDB free tier (documented test key "2" — no auth,
+  // no captcha, CORS: Access-Control-Allow-Origin: *). Has real artist thumbs
+  // even for underground/dubstep artists the other sources miss, and resolves
+  // Wikipedia-disambiguation cases like Max Cooper. Guard: exact normalized
+  // name match only, and the thumb URL is HEAD-verified as an image before
+  // use (the DB contains stale/hotlink-broken URLs).
+  const url = "https://www.theaudiodb.com/api/v1/json/2/search.php?s=" + encodeURIComponent(name);
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) return null;
+  const d = await res.json();
+  const artists = d?.artists || [];
+  const target = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const a of artists) {
+    if ((a.strArtist || "").toLowerCase().replace(/[^a-z0-9]/g, "") !== target) continue;
+    const src = a.strArtistCutout || a.strArtistThumb || "";
+    if (!src || src.toLowerCase() === "null") continue;
+    try {
+      const head = await fetch(src, { method: "HEAD" });
+      if (head.ok && (head.headers.get("Content-Type") || "").startsWith("image/")) {
+        return { src, credit: "TheAudioDB" };
+      }
+    } catch { continue; }
+  }
+  return null;
+}
+
 
 async function fetchFromDeezer(name) {
   const url = "https://api.deezer.com/search/artist?q=" + encodeURIComponent(name) + "&limit=1";
@@ -144,6 +172,7 @@ async function fetchArtistPortrait(name) {
       if (source === "deezer") hit = await fetchFromDeezer(name);
       else if (source === "wikipedia") hit = await fetchFromWikipedia(name);
       else if (source === "musicbrainz") hit = await fetchFromMusicBrainz(name);
+      else if (source === "theaudiodb") hit = await fetchFromTheAudioDB(name);
     } catch { continue; }
     if (hit) {
       img.onload = () => {
