@@ -21,9 +21,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pytest pytest-mock
-      # tests import `contracts.ProvenanceRegistry` — put repo root on the
-      # path (the VPS install is editable; the runner needs it explicit)
-      - run: PYTHONPATH=$GITHUB_WORKSPACE pytest tests/ -q
+      # tests import `contracts.ProvenanceRegistry` (repo root on path) and
+      # the contract imports `genlayer` — stubbed in tests/stubs/genlayer
+      # (the VPS venv has the same hand-maintained stub installed).
+      - run: PYTHONPATH="$GITHUB_WORKSPACE:$GITHUB_WORKSPACE/tests/stubs" pytest tests/ -q
 
   frontend:
     name: frontend syntax
