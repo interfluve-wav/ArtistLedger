@@ -1029,20 +1029,69 @@ function parseReceipt(receipt) {
   }
   if (evidence) {
     const e = evidence;
-    if (e.acoustid_matched) matched.push({ label: "AcoustID", verdict: "match", detail: e.acoustid_recording_mbid || "" });
-    if (e.spotify_artist_id) matched.push({ label: "Spotify", verdict: e.spotify_verified ? "verified" : (Number(e.spotify_popularity) >= 20 && Number(e.spotify_followers) >= 1000 ? "popular" : "claimed"), detail: `${e.spotify_followers} followers, ${e.spotify_popularity} pop` });
-    if (e.apple_music_artist_id) matched.push({ label: "Apple Music", verdict: e.apple_music_track_present ? "track" : "artist", detail: `id ${e.apple_music_artist_id}` });
-    if (e.bandcamp_handle) matched.push({ label: "Bandcamp", verdict: "claimed", detail: e.bandcamp_handle });
-    if (e.soundcloud_handle) matched.push({ label: "SoundCloud", verdict: e.soundcloud_verified ? "verified" : "claimed", detail: `${(Number(e.soundcloud_followers)/1000).toFixed(0)}k followers` });
-    if (e.instagram_handle) matched.push({ label: "Instagram", verdict: "claimed", detail: e.instagram_handle });
-    if (Number(e.lastfm_scrobble_count) >= 100) matched.push({ label: "Last.fm", verdict: "scrobbles", detail: `${e.lastfm_scrobble_count} scrobbles` });
-    if (e.ownership_proof_soundcloud) matched.push({ label: "SoundCloud", verdict: "token verified", detail: "bio token confirmed" });
-    if (e.ownership_proof_lastfm) matched.push({ label: "Last.fm", verdict: "token verified", detail: `${e.ownership_lastfm_scrobbles || 0} scrobbles + token` });
-    if (e.ownership_proof_bandcamp) matched.push({ label: "Bandcamp", verdict: "token verified", detail: "about token confirmed" });
-    if (e.ownership_proof_youtube) matched.push({ label: "YouTube", verdict: "token verified", detail: "channel bio token confirmed" });
-    if (Number(e.wallet_age_days) >= 90) matched.push({ label: "Wallet age", verdict: "≥90d", detail: `${e.wallet_age_days} days` });
-    if (e.ens_matches_artist || e.farcaster_fname) matched.push({ label: "Wallet name", verdict: "match", detail: e.ens_name || e.farcaster_fname });
-    if (Number(e.isrc_codes?.length || 0) > 0) matched.push({ label: "ISRC codes", verdict: "found", detail: `${e.isrc_codes.length} codes` });
+    // Pretty per-platform detail: collapsed summary shows the key fact,
+    // the expanded panel (m.raw) adds the full context — not a repeat.
+    const prettyUrl = (u) => {
+      const s = String(u || "").trim();
+      if (!s) return "";
+      try { const url = new URL(s.startsWith("http") ? s : "https://" + s); return url.hostname.replace(/^www\./, "") + (url.pathname === "/" ? "" : url.pathname); }
+      catch { return s; }
+    };
+    const isUrl = (s) => /^https?:\/\//i.test(String(s || ""));
+    const handleOf = (s) => {
+      const str = String(s || "").trim();
+      if (!str) return "";
+      if (isUrl(str)) {
+        try { return decodeURIComponent(str.replace(/^https?:\/\/[^/]+\//i, "").replace(/\/+$/, "").split("?")[0]) || str; }
+        catch { return str; }
+      }
+      return str.replace(/^@/, "");
+    };
+    if (e.acoustid_matched) matched.push({ label: "AcoustID", verdict: "match", detail: e.acoustid_recording_mbid || "", raw: "fingerprint matched a MusicBrainz recording" });
+    if (e.spotify_artist_id) matched.push({
+      label: "Spotify",
+      verdict: e.spotify_verified ? "verified" : (Number(e.spotify_popularity) >= 20 && Number(e.spotify_followers) >= 1000 ? "popular" : "claimed"),
+      detail: Number(e.spotify_followers) > 0 ? `${Number(e.spotify_followers).toLocaleString()} followers` : "artist profile found",
+      raw: `artist id ${e.spotify_artist_id} · ${Number(e.spotify_followers).toLocaleString()} followers · popularity ${e.spotify_popularity}`,
+    });
+    if (e.apple_music_artist_id) matched.push({
+      label: "Apple Music",
+      verdict: e.apple_music_track_present ? "track" : "artist",
+      detail: e.apple_music_track_present ? "artist + track found" : "artist page found",
+      raw: `artist id ${e.apple_music_artist_id} · music.apple.com/artist/${e.apple_music_artist_id}`,
+    });
+    if (e.bandcamp_handle) matched.push({
+      label: "Bandcamp",
+      verdict: "claimed",
+      detail: handleOf(e.bandcamp_handle) + ".bandcamp.com",
+      raw: "https://" + handleOf(e.bandcamp_handle).replace(/\.bandcamp\.com.*$/, "") + ".bandcamp.com",
+    });
+    if (e.soundcloud_handle) {
+      const scHandle = handleOf(e.soundcloud_handle);
+      const wrongHost = isUrl(e.soundcloud_handle) && !/soundcloud\.com/i.test(e.soundcloud_handle);
+      matched.push({
+        label: "SoundCloud",
+        verdict: e.soundcloud_verified ? "verified" : "claimed",
+        detail: Number(e.soundcloud_followers) > 0 ? `${scHandle} · ${Number(e.soundcloud_followers).toLocaleString()} followers` : `${scHandle} · no public follower data`,
+        raw: wrongHost
+          ? `claimed handle is not a SoundCloud URL (${prettyUrl(e.soundcloud_handle)}) — stored as-is, not verified`
+          : `soundcloud.com/${scHandle} · ${Number(e.soundcloud_followers).toLocaleString()} followers${e.soundcloud_verified ? " · verified badge" : ""}`,
+      });
+    }
+    if (e.instagram_handle) matched.push({
+      label: "Instagram",
+      verdict: "claimed",
+      detail: handleOf(e.instagram_handle),
+      raw: "instagram.com/" + handleOf(e.instagram_handle),
+    });
+    if (Number(e.lastfm_scrobble_count) >= 100) matched.push({ label: "Last.fm", verdict: "scrobbles", detail: `${Number(e.lastfm_scrobble_count).toLocaleString()} scrobbles`, raw: `${Number(e.lastfm_scrobble_count).toLocaleString()} artist scrobbles by the claimed profile` });
+    if (e.ownership_proof_soundcloud) matched.push({ label: "SoundCloud", verdict: "token verified", detail: "bio token confirmed", raw: "ALVERIFY token found in the profile's bio — proof of write access" });
+    if (e.ownership_proof_lastfm) matched.push({ label: "Last.fm", verdict: "token verified", detail: `${Number(e.ownership_lastfm_scrobbles || 0).toLocaleString()} scrobbles + token`, raw: "ALVERIFY token found in profile + live scrobble history" });
+    if (e.ownership_proof_bandcamp) matched.push({ label: "Bandcamp", verdict: "token verified", detail: "about token confirmed", raw: "ALVERIFY token found in the about section — proof of write access" });
+    if (e.ownership_proof_youtube) matched.push({ label: "YouTube", verdict: "token verified", detail: "channel bio token confirmed", raw: "ALVERIFY token found in the channel bio — proof of write access" });
+    if (Number(e.wallet_age_days) >= 90) matched.push({ label: "Wallet age", verdict: "≥90d", detail: `${Number(e.wallet_age_days).toLocaleString()} days`, raw: `wallet first seen ${Number(e.wallet_age_days).toLocaleString()} days ago` });
+    if (e.ens_matches_artist || e.farcaster_fname) matched.push({ label: "Wallet name", verdict: "match", detail: e.ens_name || e.farcaster_fname, raw: `on-chain name binds the wallet to the artist identity (${e.ens_name ? "ENS" : "Farcaster"})` });
+    if (Number(e.isrc_codes?.length || 0) > 0) matched.push({ label: "ISRC codes", verdict: "found", detail: `${e.isrc_codes.length} codes`, raw: e.isrc_codes.join(", ") });
   }
   return { score, verdict, evidence, matched, matchCount: evidence ? Number(evidence.verification_match_count || 0) : 0 };
 }
@@ -1244,7 +1293,7 @@ function renderCertificate(data, receipt) {
 
     const raw = document.createElement("div");
     raw.className = "raw";
-    raw.textContent = m.detail || "";
+    raw.textContent = m.raw || m.detail || "";
     det.appendChild(raw);
 
     rows.appendChild(det);
