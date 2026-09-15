@@ -29,11 +29,105 @@ const WIKI_TITLES = {
   "Jamie xx": "Jamie_xx", "Skrillex": "Skrillex", "deadmau5": "Deadmau5",
   "Daft Punk": "Daft_Punk",
 };
+
+// Source order matters — Wikipedia first (curated portraits, CORS-enabled),
+// MusicBrainz second (CORS-enabled, cover-art proxy), Deezer LAST because
+// api.deezer.com omits Access-Control-Allow-Origin — browser fetches are
+// blocked by CORS, so it only works in non-browser contexts. Kept as a
+// harmless last resort for potential future server-side use.
+const PHOTO_SOURCES = ["wikipedia", "musicbrainz", "deezer"];
+
+async function fetchFromDeezer(name) {
+  const url = "https://api.deezer.com/search/artist?q=" + encodeURIComponent(name) + "&limit=1";
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) return null;
+  const d = await res.json();
+  const a = d?.data?.[0];
+  if (!a) return null;
+  // Guard against fuzzy-match junk: require the returned name to overlap the query.
+  const q = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const r = (a.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!q || !r || !q.includes(r.slice(0, Math.min(5, r.length))) && !r.includes(q.slice(0, Math.min(5, q.length)))) return null;
+  const src = a.picture_xl || a.picture_big || a.picture_medium || a.picture;
+  return src ? { src, credit: "Deezer" } : null;
+}
+
+async function fetchFromWikipedia(name) {
+  const title = WIKI_TITLES[name] || name.trim().replace(/\s+/g, "_");
+  const url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(title);
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) return null;
+  const d = await res.json();
+  // guard against wrong-entity (Burial the practice) — accept only when description
+  // describes a person/band, or when we have an explicit WIKI_TITLES entry.
+  const desc = (d.description || "").toLowerCase();
+  const isPersonOrBand = /(singer|musician|band|dj|artist|duo|group|producer)/.test(desc);
+  const isTrusted = !!WIKI_TITLES[name];
+  const src = (isTrusted || (d.type === "standard" && isPersonOrBand))
+    ? d.thumbnail?.source : null;
+  return src ? { src, credit: "Wikipedia" } : null;
+}
+
+async function fetchFromMusicBrainz(name) {
+  // MB has artist images via the cover-art archive, but for artist portrait
+  // the front-page release cover is the next best proxy when the artist has
+  // no relation image. Use /ws/2/artist/?query= for canonical name first.
+  const search = "https://musicbrainz.org/ws/2/artist/?query="
+    + encodeURIComponent("artist:" + name)
+    + "&fmt=json&limit=10";
+  const UA = { Accept: "application/json", "User-Agent": "ArtistLedger/0.3 (https://artistledger-frontend.vercel.app)" };
+  let res = await fetch(search, { headers: UA });
+  // MB polices ~1 req/s — one spaced retry on throttle/soft failures
+  if (!res.ok) {
+    await new Promise((r) => setTimeout(r, 1100));
+    res = await fetch(search, { headers: UA });
+  }
+  if (!res.ok) return null;
+  const d = await res.json();
+  // Identity guard: MB fuzzy search ranks token-overlap matches first
+  // ("Pearson Sound" → "Falcom Sound Team jdk", "Stain" → "Blood Stain
+  // Child"). Scan the candidates for an EXACT normalized match on name,
+  // sort-name, or a listed alias — better a placeholder than someone
+  // else's face on the certificate.
+  const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const target = norm(name);
+  const mbid = (d?.artists || []).find((a) =>
+    [a.name, a["sort-name"],
+      ...(Array.isArray(a.aliases) ? a.aliases.map((al) => al.name) : [])]
+      .some((c) => norm(c) === target)
+  )?.id;
+  if (!mbid) return null;
+  // Any official release (not just albums): dance/dubplate catalogs are
+  // EPs and 12"s — filtering type=album empties the result for exactly the
+  // artists this fallback exists for. Cover Art Archive: 250px front, no auth.
+  const rels = "https://musicbrainz.org/ws/2/release?artist=" + mbid
+    + "&status=official&fmt=json&limit=1";
+  let r2 = await fetch(rels, {
+    headers: { Accept: "application/json", "User-Agent": "ArtistLedger/0.3 (https://artistledger-frontend.vercel.app)" },
+  });
+  // MB polices ~1 req/s — one spaced retry on rate-limit/soft failures
+  if (!r2.ok) {
+    await new Promise((r) => setTimeout(r, 1100));
+    r2 = await fetch(rels, {
+      headers: { Accept: "application/json", "User-Agent": "ArtistLedger/0.3 (https://artistledger-frontend.vercel.app)" },
+    });
+  }
+  if (!r2.ok) return null;
+  const d2 = await r2.json();
+  const rgid = d2?.releases?.[0]?.id;
+  if (!rgid) return null;
+  return {
+    src: "https://coverartarchive.org/release/" + rgid + "/front-250",
+    credit: "MusicBrainz",
+  };
+}
+
 async function fetchArtistPortrait(name) {
   const box = $("cert-photo");
   const img = $("cert-photo-img");
   const holder = $("cert-photo-holder");
   const initial = $("cert-photo-initial");
+  const creditEl = $("cert-photo-credit");
   if (!box) return;
   // reset to placeholder while loading
   img.removeAttribute("src");
@@ -41,26 +135,29 @@ async function fetchArtistPortrait(name) {
   holder.style.display = "flex";
   box.style.display = "flex";
   if (initial) initial.textContent = (name.trim()[0] || "?").toUpperCase();
+  if (creditEl) creditEl.textContent = "";
 
-  const title = WIKI_TITLES[name] || name.trim().replace(/\s+/g, "_");
-  try {
-    const url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(title);
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error("wiki " + res.status);
-    const d = await res.json();
-    // guard: wrong-entity lookups (disambiguation pages have no thumbnail,
-    // but some do — e.g. "Burial" the practice). Accept the image only when
-    // the summary describes a person/band.
-    const desc = (d.description || "").toLowerCase();
-    const kind = (d.type === "standard" && /(singer|musician|band|dj|artist|duo|group|producer)/.test(desc)) || WIKI_TITLES[name];
-    const src = d.thumbnail && d.thumbnail.source;
-    if (src && kind) {
-      img.onload = () => { img.style.display = "block"; holder.style.display = "none"; };
+  // Try each source in order; first hit wins.
+  for (const source of PHOTO_SOURCES) {
+    let hit = null;
+    try {
+      if (source === "deezer") hit = await fetchFromDeezer(name);
+      else if (source === "wikipedia") hit = await fetchFromWikipedia(name);
+      else if (source === "musicbrainz") hit = await fetchFromMusicBrainz(name);
+    } catch { continue; }
+    if (hit) {
+      img.onload = () => {
+        img.style.display = "block";
+        holder.style.display = "none";
+        if (creditEl) creditEl.textContent = "photo: " + hit.credit;
+      };
       img.onerror = () => { holder.style.display = "flex"; };
-      img.src = src;
-      img.alt = name + " — portrait via Wikipedia";
+      img.src = hit.src;
+      img.alt = name + " — portrait via " + hit.credit;
+      return;
     }
-  } catch { /* placeholder initial stays */ }
+  }
+  // no source returned a usable image — placeholder initial stays
 }
 
 // Map short source names → contract's 13-enum source types.
