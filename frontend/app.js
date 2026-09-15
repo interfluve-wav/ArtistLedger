@@ -80,8 +80,17 @@ async function fetchFromMusicBrainz(name) {
   });
   if (!res.ok) return null;
   const d = await res.json();
-  const mbid = d?.artists?.[0]?.id;
+  const top = d?.artists?.[0];
+  const mbid = top?.id;
   if (!mbid) return null;
+  // Name-overlap guard (same as Deezer): fuzzy search returns near-misses,
+  // and a fictitious name must NOT inherit some real artist's cover art.
+  const q = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const r = (top.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!q || !r) return null;
+  const qN = q.slice(0, Math.min(5, q.length));
+  const rN = r.slice(0, Math.min(5, r.length));
+  if (!q.includes(rN) && !r.includes(qN)) return null;
   // No direct artist image URL — but we can hit the release cover-art as a proxy.
   // Skip if no releases available; this is the lowest-priority source.
   const rels = "https://musicbrainz.org/ws/2/release?artist=" + mbid
