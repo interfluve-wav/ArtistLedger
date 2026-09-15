@@ -74,35 +74,48 @@ async function fetchFromMusicBrainz(name) {
   // no relation image. Use /ws/2/artist/?query= for canonical name first.
   const search = "https://musicbrainz.org/ws/2/artist/?query="
     + encodeURIComponent("artist:" + name)
-    + "&fmt=json&limit=1";
-  const res = await fetch(search, {
-    headers: { Accept: "application/json", "User-Agent": "ArtistLedger/0.3 (https://artistledger-frontend.vercel.app)" },
-  });
+    + "&fmt=json&limit=10";
+  const UA = { Accept: "application/json", "User-Agent": "ArtistLedger/0.3 (https://artistledger-frontend.vercel.app)" };
+  let res = await fetch(search, { headers: UA });
+  // MB polices ~1 req/s — one spaced retry on throttle/soft failures
+  if (!res.ok) {
+    await new Promise((r) => setTimeout(r, 1100));
+    res = await fetch(search, { headers: UA });
+  }
   if (!res.ok) return null;
   const d = await res.json();
-  const top = d?.artists?.[0];
-  const mbid = top?.id;
+  // Identity guard: MB fuzzy search ranks token-overlap matches first
+  // ("Pearson Sound" → "Falcom Sound Team jdk", "Stain" → "Blood Stain
+  // Child"). Scan the candidates for an EXACT normalized match on name,
+  // sort-name, or a listed alias — better a placeholder than someone
+  // else's face on the certificate.
+  const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const target = norm(name);
+  const mbid = (d?.artists || []).find((a) =>
+    [a.name, a["sort-name"],
+      ...(Array.isArray(a.aliases) ? a.aliases.map((al) => al.name) : [])]
+      .some((c) => norm(c) === target)
+  )?.id;
   if (!mbid) return null;
-  // Name-overlap guard (same as Deezer): fuzzy search returns near-misses,
-  // and a fictitious name must NOT inherit some real artist's cover art.
-  const q = name.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const r = (top.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (!q || !r) return null;
-  const qN = q.slice(0, Math.min(5, q.length));
-  const rN = r.slice(0, Math.min(5, r.length));
-  if (!q.includes(rN) && !r.includes(qN)) return null;
-  // No direct artist image URL — but we can hit the release cover-art as a proxy.
-  // Skip if no releases available; this is the lowest-priority source.
+  // Any official release (not just albums): dance/dubplate catalogs are
+  // EPs and 12"s — filtering type=album empties the result for exactly the
+  // artists this fallback exists for. Cover Art Archive: 250px front, no auth.
   const rels = "https://musicbrainz.org/ws/2/release?artist=" + mbid
-    + "&type=album&status=official&fmt=json&limit=1";
-  const r2 = await fetch(rels, {
+    + "&status=official&fmt=json&limit=1";
+  let r2 = await fetch(rels, {
     headers: { Accept: "application/json", "User-Agent": "ArtistLedger/0.3 (https://artistledger-frontend.vercel.app)" },
   });
+  // MB polices ~1 req/s — one spaced retry on rate-limit/soft failures
+  if (!r2.ok) {
+    await new Promise((r) => setTimeout(r, 1100));
+    r2 = await fetch(rels, {
+      headers: { Accept: "application/json", "User-Agent": "ArtistLedger/0.3 (https://artistledger-frontend.vercel.app)" },
+    });
+  }
   if (!r2.ok) return null;
   const d2 = await r2.json();
   const rgid = d2?.releases?.[0]?.id;
   if (!rgid) return null;
-  // Cover Art Archive: 250px front cover, no auth needed.
   return {
     src: "https://coverartarchive.org/release/" + rgid + "/front-250",
     credit: "MusicBrainz",
