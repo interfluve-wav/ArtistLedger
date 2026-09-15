@@ -60,7 +60,7 @@ for f in $(find frontend -name '*.js' -not -path 'frontend/lib/*'); do
 done
 [ "$JSFAIL" -ne 0 ] && GATE=1
 
-grep -q "0xA73E4588E900f0d4b62Eca0e963B275dc2AfC5a4" frontend/app.js 2>>"$LOG" || GATE=1
+grep -q "0x53867F241e0aa5CF7AD5728F0dA1E063CA811bE8" frontend/app.js 2>>"$LOG" || GATE=1
 
 bash "$WT/scripts/check_no_keys.sh" >>"$LOG" 2>&1 || GATE=1
 

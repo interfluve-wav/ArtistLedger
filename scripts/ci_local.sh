@@ -20,7 +20,7 @@ done
 if [ "$JSFAIL" -eq 0 ]; then echo "all frontend JS parse OK"; else FAIL=1; fi
 
 step "3/4 contract pointer"
-if grep -q "0xA73E4588E900f0d4b62Eca0e963B275dc2AfC5a4" frontend/app.js; then
+if grep -q "0x53867F241e0aa5CF7AD5728F0dA1E063CA811bE8" frontend/app.js; then
   echo "points at v0.5.0 pool-fix contract"
 else
   echo "FAIL: frontend/app.js does not reference deployed contract"

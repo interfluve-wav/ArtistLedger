@@ -4,10 +4,10 @@
  */
 "use strict";
 
-// Deployed on studionet (2026-09-13, gasless): all features incl.
-// ownership proofs + key pools. Verified: schema OK, 12 methods,
-// 5/5 validators AGREE on deploy + writes. See docs/OPERATIONS.md.
-const CONTRACT = "0xA73E4588E900f0d4b62Eca0e963B275dc2AfC5a4";
+// Deployed on studionet (2026-09-15, gasless): all features incl.
+// ownership proofs + key pools + LLM identity guard. Verified: schema OK,
+// 14 methods, 5/5 validators AGREE on deploy + writes. See docs/OPERATIONS.md.
+const CONTRACT = "0x53867F241e0aa5CF7AD5728F0dA1E063CA811bE8";
 const GL = window.GenLayerSDK;
 
 let walletAddr = null;    // connected wallet

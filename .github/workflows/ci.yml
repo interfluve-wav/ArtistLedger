@@ -42,7 +42,7 @@ jobs:
           done
           exit $fail
       - name: frontend references deployed contract
-        run: grep -q "0xA73E4588E900f0d4b62Eca0e963B275dc2AfC5a4" frontend/app.js
+        run: grep -q "0x53867F241e0aa5CF7AD5728F0dA1E063CA811bE8" frontend/app.js
 
   secrets:
     name: no key material in tree
