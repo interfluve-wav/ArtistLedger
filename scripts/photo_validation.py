@@ -7,6 +7,7 @@ appears. Tests the feature commit 7095450 exactly as parked.
 """
 import json
 import pathlib
+import sys
 from playwright.sync_api import sync_playwright
 
 FRONTEND = pathlib.Path("/root/projects/ArtistLedger/frontend")
@@ -25,6 +26,11 @@ CASES = [
     ("Boards of Canada", "lastfm, bandcamp"),
     ("Totally Fictitious Artist QZ", "instagram, website"),
 ]
+
+# CLI override: python3 photo_validation.py "Mala" "Coki" ...
+if len(sys.argv) > 1:
+    CASES = [(n, "apple_music, bandcamp") for n in sys.argv[1:]]
+OUT_USER = len(sys.argv) > 1
 
 APP_JS = (FRONTEND / "app.js").read_text()
 CERT_HTML = FRONTEND.joinpath("index.html").read_text()
