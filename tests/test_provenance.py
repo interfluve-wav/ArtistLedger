@@ -94,7 +94,7 @@ def make_evidence(
     verification_source_2="", verification_handle_2="",
     verification_match_count=0,
     wallet_age=200, ens_name="skeemask.eth", ens_matches=True,
-    farcaster="skeemask", press_score=3,
+    farcaster="skeemask", press_score=3, llm_identity=True,
 ):
     isrc_dyn = DynArray[str]()
     for code in (isrcs or ["GBAHT1800123"]):
@@ -133,6 +133,7 @@ def make_evidence(
         ens_matches_artist=ens_matches,
         farcaster_fname=farcaster,
         press_narrative_score=press_score,
+        llm_identity_match=llm_identity,
     )
 
 

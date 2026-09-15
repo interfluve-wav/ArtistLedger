@@ -128,6 +128,9 @@ class Evidence:
     # Tier 3 — qualitative (LLM judge, ±5 points)
     press_narrative_score: int          # -5 to +5
 
+    # Tier 3b — LLM identity guard (SAME_ENTITY across sources?)
+    llm_identity_match: bool            # True = sources describe the claimed artist
+
     def to_dict(self) -> dict:
         """Serialize this Evidence to a plain dict with JSON-safe values.
 
@@ -198,6 +201,7 @@ class Evidence:
             ens_matches_artist=False,
             farcaster_fname="",
             press_narrative_score=0,
+            llm_identity_match=True,
         )
 
 
@@ -1117,7 +1121,48 @@ def _score_evidence(ev, claimed_name: str) -> int:
     bounded_adjustment = max(-W_LLM_ADJUSTMENT_RANGE, min(W_LLM_ADJUSTMENT_RANGE, int(_ev_get(ev, "press_narrative_score", 0))))
     score += bounded_adjustment
 
+    # Tier 3b — LLM identity guard. When the LLM judges that the collected
+    # sources describe a DIFFERENT entity than the claimed name, the score is
+    # capped below the verification threshold: an artist whose evidence is
+    # "real but someone else's" must never reach VRFD. Absent/True (old
+    # receipts, stub environments) = unchanged scoring.
+    if _ev_get(ev, "llm_identity_match", True) is False:
+        score = min(score, int(DISPUTE_UPHOLD_THRESHOLD) - 1)
+
     return max(0, min(100, score))
+
+
+def _llm_identity_match(name: str, sources_summary: str) -> bool:
+    """LLM identity guard: do the collected sources describe the SAME
+    person/band as the claimed artist name, or a different entity?
+
+    Catches wrong-entity verifications that token-overlap checks let
+    through ("Stain" -> "Blood Stain Child", "Max Cooper" the producer vs
+    the entomologist, "Burial" the practice). Runs in a nondet block like
+    every LLM call; validators receive the leader's boolean via calldata
+    (no re-fetch — same 'verify determinism' pattern as the rest of
+    evidence). Prompt v1: pinned wording, change requires a contract
+    version bump so all validators judge identically.
+    """
+    prompt = (
+        f"You are checking IDENTITY CONSISTENCY for an on-chain music "
+        f"provenance registry.\n"
+        f"Claimed artist name: '{name}'.\n\n"
+        f"Evidence collected from public sources:\n{sources_summary}\n\n"
+        f"Question: do these sources consistently refer to the SAME "
+        f"person/band as '{name}' (a real music artist), or do any of "
+        f"them appear to describe a DIFFERENT entity that merely shares "
+        f"words with the name (e.g. a disambiguation page, a different "
+        f"person with the same name, a non-music subject)?\n\n"
+        f"Respond with ONLY one word: SAME_ENTITY or DIFFERENT_ENTITY."
+    )
+    try:
+        raw = gl.nondet.exec_prompt(prompt).strip().upper()
+        return "SAME_ENTITY" in raw and "DIFFERENT" not in raw
+    except Exception:
+        # LLM unavailable: fail OPEN (absent field behaves the same —
+        # this guard is additive defense, not a hard dependency)
+        return True
 
 
 def _llm_qualitative_adjustment(name: str, sources_summary: str) -> int:
@@ -1518,6 +1563,8 @@ class ProvenanceRegistry(gl.Contract):
             # Tier 3 (LLM)
             sources_summary = _build_sources_summary(ev, source_urls)
             ev.press_narrative_score = _llm_qualitative_adjustment(name, sources_summary)
+            # Tier 3b (LLM identity guard) — SAME_ENTITY/DIFFERENT_ENTITY
+            ev.llm_identity_match = _llm_identity_match(name, sources_summary)
 
             return ev
 
@@ -1910,6 +1957,7 @@ def _score_evidence_from_dict(d: dict, name: str) -> int:
             ens_matches_artist=bool(d.get("ens_matches_artist", False)),
             farcaster_fname=d.get("farcaster_fname", ""),
             press_narrative_score=int(d.get("press_narrative_score", 0)),
+            llm_identity_match=bool(d.get("llm_identity_match", True)),
         )
         return _score_evidence(ev, name)
     except Exception:
