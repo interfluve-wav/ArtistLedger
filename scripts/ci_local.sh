@@ -7,7 +7,10 @@ FAIL=0
 step() { echo "=== $1 ==="; }
 
 step "1/4 pytest (contract + validator tests)"
-python3 -m pytest tests/ -q || FAIL=1
+# venv python (system python3 has no pytest outside an activated venv)
+PYBIN="$(dirname "$0")/../.venv/bin/python"
+[ -x "$PYBIN" ] || PYBIN=python3
+"$PYBIN" -m pytest tests/ -q || FAIL=1
 
 step "2/4 frontend JS syntax"
 JSFAIL=0
