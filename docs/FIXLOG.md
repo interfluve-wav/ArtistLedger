@@ -85,3 +85,31 @@ followers/popularity absent per F1 — name-binding carries the tier-1 signal).
 **Tests:** 123 green (3 new: mint fallback, creds storage, bad-creds → "").
 **Keys:** `.env` now has SPOTIFY_CLIENT_ID/SECRET (your own app), chmod 600,
 gitignored; only key NAMES ever logged.
+
+---
+
+## 2026-09-15 — CI + deploy pipeline hardening
+
+### F-session. Watcher could clobber feature branches; no gates, no smoke
+**Symptom:** `scripts/autodeploy.sh` (v1) did `git reset --hard origin/main`
+in the VPS working tree every time origin/main moved. With a feature branch
+checked out (current state), the 5-min cron would have orphaned local commits.
+**Root cause:** watcher conflated "deploy origin/main" with "reset working
+tree"; no test gate before ship; no post-deploy check; overlapping cron runs
+unguarded; cron env has no venv (system python3 lacks pytest).
+**Fix (v2):**
+- deploys from a temp git worktree at origin/main — working tree untouched
+- inlined gates on the deploy tree: pytest (via `$REPO/.venv/bin/python`),
+  `node --check` on all frontend JS (lib/ exempt), contract-pointer grep,
+  `check_no_keys.sh` — any failure blocks deploy
+- flock guard vs overlapping runs; post-deploy smoke (prod 200 + app.js ref)
+- logrotate config `/etc/logrotate.d/artistledger` (su root root)
+**Verified:** `bash -n` clean; dry-run (fake SHA + stubbed vercel) ran all
+gates green on the worktree (135 passed, keys clean) and took the correct
+failure path without touching `.last-deployed-sha`; noop path exits 0.
+**Also this session:** GitHub Actions CI (`.github/workflows/ci.yml`: pytest,
+JS syntax + contract pointer, key scan; concurrency + timeouts) +
+`scripts/ci_local.sh` local parity script (ALL GATES GREEN locally);
+multi-source artist portrait feature committed (7095450). All parked on
+`feat/reverify-recovery` (ed3d69a) pending push approval — 4 commits ahead
+of origin/main.
