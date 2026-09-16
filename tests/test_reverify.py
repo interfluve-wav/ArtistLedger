@@ -36,9 +36,9 @@ def contract():
 
 def _evidence_json(**overrides):
     base = {
-        "bandcamp_handle": "skeemask",
-        "soundcloud_handle": "skeemask",
-        "instagram_handle": "skeemask",
+        "bandcamp_handle": "burial",
+        "soundcloud_handle": "burial",
+        "instagram_handle": "burial",
         "verification_source_1": "",
         "verification_handle_1": "",
         "verification_source_2": "",
@@ -48,10 +48,10 @@ def _evidence_json(**overrides):
     return json.dumps(base)
 
 
-def _verified_artist(wallet=OLD, *, name="Skee Mask", score=80, evidence=None):
+def _verified_artist(wallet=OLD, *, name="Burial", score=80, evidence=None):
     return Artist(
         wallet=wallet,
-        did="did:web:skee.mask",
+        did="did:web:burial",
         name=name,
         verified_at=u256(1000),
         score=u256(score),
@@ -95,19 +95,19 @@ def test_reverify_migrates_identity_and_repoints_releases(contract):
                return_value=f"about page with {TOKEN}"), \
          patch.object(contract, "_sender", return_value=NEW), \
          patch.object(contract, "_now", return_value=2000):
-        result = contract.reverify(OLD, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        result = contract.reverify(OLD, "Burial", TOKEN, {"bandcamp": "burial"})
 
     assert "Identity migrated" in result
     migrated = contract.artists[NEW]
-    assert migrated.name == "Skee Mask"
-    assert migrated.did == "did:web:skee.mask"
+    assert migrated.name == "Burial"
+    assert migrated.did == "did:web:burial"
     assert int(migrated.score) == 80
     assert int(migrated.verified_at) == 2000
     # old wallet revoked (tombstoned)
     assert contract.revoked_wallets[OLD.lower()] is True
     assert int(contract.artists[OLD].score) == 0
     # identity indexes re-pointed
-    assert contract.verified_by_name["skee mask"] == NEW
+    assert contract.verified_by_name["burial"] == NEW
     assert contract.verified_by_token[TOKEN] == NEW
     # releases follow the identity
     assert contract.releases[h].artist == NEW
@@ -122,8 +122,8 @@ def test_reverify_url_proof_variants(contract):
          patch.object(contract, "_sender", return_value=NEW), \
          patch.object(contract, "_now", return_value=2000):
         result = contract.reverify(
-            OLD, "Skee Mask", TOKEN,
-            {"soundcloud": "https://soundcloud.com/skeemask"},
+            OLD, "Burial", TOKEN,
+            {"soundcloud": "https://soundcloud.com/burial"},
         )
     assert "Identity migrated" in result
 
@@ -134,21 +134,21 @@ def test_reverify_url_proof_variants(contract):
 def test_reverify_same_wallet_is_noop(contract):
     _seed_verified(contract)
     with patch.object(contract, "_sender", return_value=OLD):
-        result = contract.reverify(OLD, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        result = contract.reverify(OLD, "Burial", TOKEN, {"bandcamp": "burial"})
     assert "Already the current wallet" in result
 
 
 def test_reverify_requires_token_and_proofs(contract):
     _seed_verified(contract)
     with patch.object(contract, "_sender", return_value=NEW):
-        assert "Recovery requires" in contract.reverify(OLD, "Skee Mask")
-        assert "Recovery requires" in contract.reverify(OLD, "Skee Mask", TOKEN)
+        assert "Recovery requires" in contract.reverify(OLD, "Burial")
+        assert "Recovery requires" in contract.reverify(OLD, "Burial", TOKEN)
 
 
 def test_reverify_unverified_old_wallet_rejected(contract):
     _seed_verified(contract, score=40)
     with patch.object(contract, "_sender", return_value=NEW):
-        result = contract.reverify(OLD, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        result = contract.reverify(OLD, "Burial", TOKEN, {"bandcamp": "burial"})
     assert "not verified" in result
 
 
@@ -156,7 +156,7 @@ def test_reverify_name_mismatch_rejected(contract):
     _seed_verified(contract)
     with patch.object(contract, "_sender", return_value=NEW):
         result = contract.reverify(
-            OLD, "Somebody Completely Else", TOKEN, {"bandcamp": "skeemask"}
+            OLD, "Somebody Completely Else", TOKEN, {"bandcamp": "burial"}
         )
     assert "Name does not match" in result
 
@@ -168,7 +168,7 @@ def test_reverify_new_wallet_already_verified_rejected(contract):
                        bandcamp_handle="burial", soundcloud_handle="burial",
                        instagram_handle="burial", verification_handle_1="burial"))
     with patch.object(contract, "_sender", return_value=NEW):
-        result = contract.reverify(OLD, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        result = contract.reverify(OLD, "Burial", TOKEN, {"bandcamp": "burial"})
     assert "already holds a verified identity" in result
 
 
@@ -185,9 +185,9 @@ def test_reverify_into_previously_revoked_wallet_allowed(contract):
                return_value=f"about {TOKEN}"), \
          patch.object(contract, "_sender", return_value=NEW), \
          patch.object(contract, "_now", return_value=2000):
-        result = contract.reverify(OLD, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        result = contract.reverify(OLD, "Burial", TOKEN, {"bandcamp": "burial"})
     assert "Identity migrated" in result
-    assert contract.artists[NEW].name == "Skee Mask"
+    assert contract.artists[NEW].name == "Burial"
     assert contract.revoked_wallets.get(OLD.lower()) is True
 
 
@@ -200,8 +200,8 @@ def test_reverify_round_trip_restores_views(contract):
                return_value=f"about {TOKEN}"), \
          patch.object(contract, "_sender", return_value=NEW), \
          patch.object(contract, "_now", return_value=2000):
-        assert "Identity migrated" in contract.reverify(OLD, "Skee Mask", TOKEN,
-                                                        {"bandcamp": "skeemask"})
+        assert "Identity migrated" in contract.reverify(OLD, "Burial", TOKEN,
+                                                        {"bandcamp": "burial"})
     assert contract.get_artist(OLD) == {"verified": False, "revoked": True}
 
     # second recovery: B -> back into A
@@ -209,12 +209,12 @@ def test_reverify_round_trip_restores_views(contract):
                return_value=f"about {TOKEN}-2"), \
          patch.object(contract, "_sender", return_value=OLD), \
          patch.object(contract, "_now", return_value=3000):
-        result = contract.reverify(NEW, "Skee Mask", f"{TOKEN}-2",
-                                   {"bandcamp": "skeemask"})
+        result = contract.reverify(NEW, "Burial", f"{TOKEN}-2",
+                                   {"bandcamp": "burial"})
     assert "Identity migrated" in result
     a = contract.get_artist(OLD)
     assert a["verified"] is True and a["revoked"] is False
-    by_name = contract.get_verified_by_name("Skee Mask")
+    by_name = contract.get_verified_by_name("Burial")
     assert by_name["wallet"] == OLD and by_name["verified"] is True
     assert contract.get_artist(NEW) == {"verified": False, "revoked": True}
 
@@ -228,7 +228,7 @@ def test_anchor_release_blocked_for_revoked_wallet(contract):
                return_value=f"about {TOKEN}"), \
          patch.object(contract, "_sender", return_value=NEW), \
          patch.object(contract, "_now", return_value=2000):
-        contract.reverify(OLD, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        contract.reverify(OLD, "Burial", TOKEN, {"bandcamp": "burial"})
 
     squat = b"\x03" * 32
     with patch.object(contract, "_sender", return_value=OLD):
@@ -260,7 +260,7 @@ def test_fresh_register_on_revoked_wallet_reads_live(contract):
 
 def test_reverify_unknown_wallet_rejected(contract):
     with patch.object(contract, "_sender", return_value=NEW):
-        result = contract.reverify(OLD, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        result = contract.reverify(OLD, "Burial", TOKEN, {"bandcamp": "burial"})
     assert "No verified artist on that wallet" in result
 
 
@@ -272,10 +272,10 @@ def test_reverify_rejected_without_token_on_profile(contract):
     with patch("contracts.ProvenanceRegistry._bandcamp_about",
                return_value="no token here"), \
          patch.object(contract, "_sender", return_value=NEW):
-        result = contract.reverify(OLD, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        result = contract.reverify(OLD, "Burial", TOKEN, {"bandcamp": "burial"})
     assert "Recovery rejected" in result
     assert NEW not in contract.artists
-    assert contract.verified_by_name["skee mask"] == OLD  # untouched
+    assert contract.verified_by_name["burial"] == OLD  # untouched
 
 
 def test_reverify_rejects_replayed_registration_token(contract):
@@ -288,11 +288,11 @@ def test_reverify_rejects_replayed_registration_token(contract):
     with patch("contracts.ProvenanceRegistry._bandcamp_about",
                return_value=f"bio with the old registration token {OLD_TOKEN}"), \
          patch.object(contract, "_sender", return_value=NEW):
-        result = contract.reverify(OLD, "Skee Mask", OLD_TOKEN,
-                                   {"bandcamp": "skeemask"})
+        result = contract.reverify(OLD, "Burial", OLD_TOKEN,
+                                   {"bandcamp": "burial"})
     assert "already used" in result
     assert NEW not in contract.artists
-    assert contract.verified_by_name["skee mask"] == OLD
+    assert contract.verified_by_name["burial"] == OLD
     assert contract.revoked_wallets.get(OLD.lower()) is None  # never revoked
 
 
@@ -305,27 +305,27 @@ def test_reverify_token_is_single_use(contract):
                return_value=f"about {TOKEN}"), \
          patch.object(contract, "_sender", return_value=NEW), \
          patch.object(contract, "_now", return_value=2000):
-        result = contract.reverify(OLD, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        result = contract.reverify(OLD, "Burial", TOKEN, {"bandcamp": "burial"})
     assert "Identity migrated" in result
 
     with patch("contracts.ProvenanceRegistry._bandcamp_about",
                return_value=f"about {TOKEN}"), \
          patch.object(contract, "_sender", return_value=THIRD):
-        result = contract.reverify(NEW, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        result = contract.reverify(NEW, "Burial", TOKEN, {"bandcamp": "burial"})
     assert "already used" in result
     assert THIRD not in contract.artists
-    assert contract.verified_by_name["skee mask"] == NEW  # still at first new wallet
+    assert contract.verified_by_name["burial"] == NEW  # still at first new wallet
 
 
 def test_reverify_same_profile_rule_blocks_hijack(contract):
     """Token on a DIFFERENT profile cluster than the original evidence
     cannot move the identity (attacker-hijack guard)."""
-    _seed_verified(contract)  # evidence handles all "skeemask"
+    _seed_verified(contract)  # evidence handles all "burial"
     with patch("contracts.ProvenanceRegistry._bandcamp_about",
                return_value=f"about {TOKEN}"), \
          patch.object(contract, "_sender", return_value=NEW):
         result = contract.reverify(
-            OLD, "Skee Mask", TOKEN, {"bandcamp": "totally-different-band"}
+            OLD, "Burial", TOKEN, {"bandcamp": "totally-different-band"}
         )
     assert "Recovery rejected" in result
     assert NEW not in contract.artists
@@ -333,25 +333,25 @@ def test_reverify_same_profile_rule_blocks_hijack(contract):
 
 def test_reverify_fresh_lastfm_account_fails_floor(contract):
     _seed_verified(contract, evidence=_evidence_json(
-        verification_source_1="lastfm_url", verification_handle_1="skeemask"))
+        verification_source_1="lastfm_url", verification_handle_1="burial"))
     with patch("contracts.ProvenanceRegistry._lastfm_profile_and_scrobbles",
                return_value=(f"journal {TOKEN}", 50)), \
          patch.object(contract, "_sender", return_value=NEW):
-        result = contract.reverify(OLD, "Skee Mask", TOKEN, {"lastfm": "skeemask"})
+        result = contract.reverify(OLD, "Burial", TOKEN, {"lastfm": "burial"})
     assert "Recovery rejected" in result
     assert NEW not in contract.artists
 
 
 def test_reverify_mature_lastfm_account_passes(contract):
     _seed_verified(contract, evidence=_evidence_json(
-        verification_source_1="lastfm_url", verification_handle_1="skeemask"))
+        verification_source_1="lastfm_url", verification_handle_1="burial"))
     with patch("contracts.ProvenanceRegistry._lastfm_profile_and_scrobbles",
                return_value=(f"journal {TOKEN}", 5000)), \
          patch.object(contract, "_sender", return_value=NEW), \
          patch.object(contract, "_now", return_value=2000):
-        result = contract.reverify(OLD, "Skee Mask", TOKEN, {"lastfm": "skeemask"})
+        result = contract.reverify(OLD, "Burial", TOKEN, {"lastfm": "burial"})
     assert "Identity migrated" in result
-    assert contract.verified_by_name["skee mask"] == NEW
+    assert contract.verified_by_name["burial"] == NEW
 
 
 # ─── Views after revocation ────────────────────────────────────────────────
@@ -363,13 +363,13 @@ def test_views_report_revocation(contract):
                return_value=f"about {TOKEN}"), \
          patch.object(contract, "_sender", return_value=NEW), \
          patch.object(contract, "_now", return_value=2000):
-        contract.reverify(OLD, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        contract.reverify(OLD, "Burial", TOKEN, {"bandcamp": "burial"})
 
     assert contract.get_artist(NEW)["verified"] is True
     assert contract.get_artist(NEW)["revoked"] is False
     assert contract.get_artist(OLD) == {"verified": False, "revoked": True}
 
-    by_name = contract.get_verified_by_name("Skee Mask")
+    by_name = contract.get_verified_by_name("Burial")
     assert by_name["wallet"] == NEW
     assert by_name["verified"] is True
     assert by_name["revoked"] is False
@@ -392,12 +392,12 @@ def test_register_hints_reverify_for_revoked_token(contract):
                return_value=f"about {TOKEN}"), \
          patch.object(contract, "_sender", return_value=NEW), \
          patch.object(contract, "_now", return_value=2000):
-        contract.reverify(OLD, "Skee Mask", TOKEN, {"bandcamp": "skeemask"})
+        contract.reverify(OLD, "Burial", TOKEN, {"bandcamp": "burial"})
 
     with patch.object(contract, "_sender", return_value=THIRD):
         result = contract.register_artist(
             did="did:web:x",
-            name="Skee Mask",
+            name="Burial",
             audio_hash=b"\x02" * 32,
             source_urls={},
             wallet=THIRD,
@@ -411,9 +411,9 @@ def test_register_hints_reverify_for_revoked_token(contract):
 
 def _stored_evidence(**kw):
     base = {
-        "bandcamp_handle": "skeemask",
-        "soundcloud_handle": "skeemask",
-        "instagram_handle": "skeemask",
+        "bandcamp_handle": "burial",
+        "soundcloud_handle": "burial",
+        "instagram_handle": "burial",
         "verification_source_1": "musicbrainz_url",
         "verification_handle_1": "mbid-123",
         "verification_source_2": "",
@@ -424,36 +424,36 @@ def _stored_evidence(**kw):
 
 
 def test_profile_clusters_overlap_same_platform():
-    assert _profile_clusters_overlap(_stored_evidence(), {"bandcamp": "skeemask"})
+    assert _profile_clusters_overlap(_stored_evidence(), {"bandcamp": "burial"})
     assert _profile_clusters_overlap(
-        _stored_evidence(), {"bandcamp": "https://skeemask.bandcamp.com"}
+        _stored_evidence(), {"bandcamp": "https://burial.bandcamp.com"}
     )
     assert _profile_clusters_overlap(
-        _stored_evidence(), {"soundcloud": "https://soundcloud.com/skeemask"}
+        _stored_evidence(), {"soundcloud": "https://soundcloud.com/burial"}
     )
     assert _profile_clusters_overlap(
-        _stored_evidence(), {"soundcloud": "Skeemask"}  # case-insensitive
+        _stored_evidence(), {"soundcloud": "burial"}  # case-insensitive
     )
 
 
 def test_profile_clusters_overlap_per_platform_blocks_squat():
     """Cross-platform squat: the SAME handle on a platform the victim never
     used must NOT match (that's the hijack the per-platform rule closes)."""
-    assert not _profile_clusters_overlap(_stored_evidence(), {"youtube": "skeemask"})
-    assert not _profile_clusters_overlap(_stored_evidence(), {"lastfm": "skeemask"})
+    assert not _profile_clusters_overlap(_stored_evidence(), {"youtube": "burial"})
+    assert not _profile_clusters_overlap(_stored_evidence(), {"lastfm": "burial"})
     assert not _profile_clusters_overlap(_stored_evidence(), {"bandcamp": "someotherband"})
     assert not _profile_clusters_overlap(_stored_evidence(), {})
-    assert not _profile_clusters_overlap({}, {"bandcamp": "skeemask"})
+    assert not _profile_clusters_overlap({}, {"bandcamp": "burial"})
 
 
 def test_profile_clusters_overlap_verification_source_platform():
     """lastfm/youtube have no stored handle — they only match when a stored
     verification source declares that platform."""
     stored = _stored_evidence(verification_source_1="lastfm_url",
-                              verification_handle_1="skeemask")
-    assert _profile_clusters_overlap(stored, {"lastfm": "skeemask"})
+                              verification_handle_1="burial")
+    assert _profile_clusters_overlap(stored, {"lastfm": "burial"})
     stored2 = _stored_evidence(verification_source_1="youtube_url",
-                               verification_handle_1="@skeemask")
-    assert _profile_clusters_overlap(stored2, {"youtube": "@skeemask"})
+                               verification_handle_1="@burial")
+    assert _profile_clusters_overlap(stored2, {"youtube": "@burial"})
     # without a declared source, lastfm can never be a recovery channel
-    assert not _profile_clusters_overlap(_stored_evidence(), {"lastfm": "skeemask"})
+    assert not _profile_clusters_overlap(_stored_evidence(), {"lastfm": "burial"})

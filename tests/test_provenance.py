@@ -73,10 +73,10 @@ def audio_hash():
 @pytest.fixture
 def source_urls():
     return {
-        "bandcamp": "skeemask",
-        "soundcloud": "skeemask",
-        "instagram": "skeemask",
-        "lastfm": "skeemask",
+        "bandcamp": "burial",
+        "soundcloud": "burial",
+        "instagram": "burial",
+        "lastfm": "burial",
         "release_title": "Compro",
     }
 
@@ -87,14 +87,14 @@ def make_evidence(
     spotify_name_matched=True,
     spotify_followers=5000, spotify_popularity=45,
     apple_id="apple123", apple_track=True,
-    bandcamp="skeemask", bandcamp_real="Skee Mask", bandcamp_loc="Berlin",
-    soundcloud="skeemask", soundcloud_followers=2000, soundcloud_verified=False,
-    instagram="skeemask", lastfm_scrobbles=500,
+    bandcamp="burial", bandcamp_real="Burial", bandcamp_loc="Berlin",
+    soundcloud="burial", soundcloud_followers=2000, soundcloud_verified=False,
+    instagram="burial", lastfm_scrobbles=500,
     verification_source_1="", verification_handle_1="",
     verification_source_2="", verification_handle_2="",
     verification_match_count=0,
-    wallet_age=200, ens_name="skeemask.eth", ens_matches=True,
-    farcaster="skeemask", press_score=3, llm_identity=True,
+    wallet_age=200, ens_name="burial.eth", ens_matches=True,
+    farcaster="burial", press_score=3, llm_identity=True,
 ):
     isrc_dyn = DynArray[str]()
     for code in (isrcs or ["GBAHT1800123"]):
@@ -142,7 +142,7 @@ def _make_artist(wallet, *, score=80):
     return Artist(
         wallet=wallet,
         did="did:web:test",
-        name="Skee Mask",
+        name="Burial",
         verified_at=u256(1000),
         score=u256(score),
         evidence="{}",
@@ -180,7 +180,7 @@ def test_evidence_empty_has_no_signals():
 
 
 def test_name_token_overlap_identical():
-    assert _name_token_overlap("Skee Mask", "Skee Mask") == 1.0
+    assert _name_token_overlap("Burial", "Burial") == 1.0
 
 
 def test_name_token_overlap_partial():
@@ -193,8 +193,8 @@ def test_name_token_overlap_disjoint():
 
 
 def test_name_token_overlap_empty():
-    assert _name_token_overlap("", "Skee Mask") == 0.0
-    assert _name_token_overlap("Skee Mask", "") == 0.0
+    assert _name_token_overlap("", "Burial") == 0.0
+    assert _name_token_overlap("Burial", "") == 0.0
 
 
 # ─── _score_evidence ───────────────────────────────────────────────────────
@@ -208,10 +208,10 @@ def test_score_full_evidence_reaches_max_85():
         verification_source_1="spotify_url",
         verification_handle_1="spotify123",
         verification_source_2="bandcamp_url",
-        verification_handle_2="skeemask",
+        verification_handle_2="burial",
         verification_match_count=2,
     )
-    score = _score_evidence(ev, "Skee Mask")
+    score = _score_evidence(ev, "Burial")
     assert score == 85
 
 
@@ -261,27 +261,27 @@ def test_score_isrc_full_credit():
 
 def test_score_bandcamp_only():
     ev = Evidence.empty()
-    ev.bandcamp_handle = "skeemask"
+    ev.bandcamp_handle = "burial"
     assert _score_evidence(ev, "X") == W_BANDCAMP
 
 
 def test_score_soundcloud_verified():
     ev = Evidence.empty()
-    ev.soundcloud_handle = "skeemask"
+    ev.soundcloud_handle = "burial"
     ev.soundcloud_verified = True
     assert _score_evidence(ev, "X") == W_SOUNDCLOUD
 
 
 def test_score_soundcloud_unverified_but_popular():
     ev = Evidence.empty()
-    ev.soundcloud_handle = "skeemask"
+    ev.soundcloud_handle = "burial"
     ev.soundcloud_followers = u256(200)
     assert _score_evidence(ev, "X") == W_SOUNDCLOUD
 
 
 def test_score_soundcloud_tiny_account_no_credit():
     ev = Evidence.empty()
-    ev.soundcloud_handle = "skeemask"
+    ev.soundcloud_handle = "burial"
     ev.soundcloud_followers = u256(50)
     ev.soundcloud_verified = False
     assert _score_evidence(ev, "X") == 0
@@ -289,7 +289,7 @@ def test_score_soundcloud_tiny_account_no_credit():
 
 def test_score_instagram_only():
     ev = Evidence.empty()
-    ev.instagram_handle = "skeemask"
+    ev.instagram_handle = "burial"
     assert _score_evidence(ev, "X") == W_INSTAGRAM
 
 
@@ -310,7 +310,7 @@ def test_score_two_source_both_match():
     ev.verification_source_1 = "spotify_url"
     ev.verification_handle_1 = "abc123"
     ev.verification_source_2 = "bandcamp_url"
-    ev.verification_handle_2 = "skeemask"
+    ev.verification_handle_2 = "burial"
     ev.verification_match_count = u256(2)
     assert _score_evidence(ev, "X") == W_TWO_SOURCE_MATCH
 
@@ -320,7 +320,7 @@ def test_score_two_source_single_match():
     ev.verification_source_1 = "spotify_url"
     ev.verification_handle_1 = "abc123"
     ev.verification_source_2 = "bandcamp_url"
-    ev.verification_handle_2 = "skeemask"
+    ev.verification_handle_2 = "burial"
     ev.verification_match_count = u256(1)
     assert _score_evidence(ev, "X") == W_SINGLE_SOURCE_MATCH
 
@@ -336,7 +336,7 @@ def test_score_two_source_zero_match_no_credit():
 def test_score_two_source_stacks_with_tier1():
     ev = Evidence.empty()
     ev.verification_match_count = u256(2)
-    ev.bandcamp_handle = "skeemask"
+    ev.bandcamp_handle = "burial"
     assert _score_evidence(ev, "X") == W_TWO_SOURCE_MATCH + W_BANDCAMP
 
 
@@ -372,14 +372,14 @@ def test_score_wallet_age_under_90_no_credit():
 
 def test_score_wallet_name_link_via_ens():
     ev = Evidence.empty()
-    ev.ens_name = "skeemask.eth"
+    ev.ens_name = "burial.eth"
     ev.ens_matches_artist = True
     assert _score_evidence(ev, "X") == W_WALLET_NAME
 
 
 def test_score_wallet_name_link_via_farcaster():
     ev = Evidence.empty()
-    ev.farcaster_fname = "skeemask"
+    ev.farcaster_fname = "burial"
     assert _score_evidence(ev, "X") == W_WALLET_NAME
 
 
@@ -401,15 +401,15 @@ def test_score_70_threshold_achievable_with_minimal_real_artist():
         isrcs=["GBAHT1800123"],
         spotify_verified=True,
         apple_track=True,
-        bandcamp="skeemask",
-        soundcloud="skeemask", soundcloud_verified=True,
-        instagram="skeemask",
+        bandcamp="burial",
+        soundcloud="burial", soundcloud_verified=True,
+        instagram="burial",
         lastfm_scrobbles=100,
         wallet_age=200,
         ens_matches=True,
         press_score=5,
     )
-    assert _score_evidence(ev, "Skee Mask") == 70
+    assert _score_evidence(ev, "Burial") == 70
 
 
 # ─── register_artist (integration with mocked APIs) ────────────────────────
@@ -426,13 +426,13 @@ def test_register_artist_verified_when_score_reaches_70(
              "id": "sp1", "verified": True, "followers": {"total": 5000}, "popularity": 45
          }), \
          patch("contracts.ProvenanceRegistry._apple_music_search", return_value=("ap1", True)), \
-         patch("contracts.ProvenanceRegistry._bandcamp_check", return_value=("skeemask", "Skee Mask", "Berlin")), \
-         patch("contracts.ProvenanceRegistry._soundcloud_check", return_value=("skeemask", 2000, True)), \
-         patch("contracts.ProvenanceRegistry._instagram_fetch", return_value=("skeemask", "Skee Mask", "music by Skee Mask")), \
+         patch("contracts.ProvenanceRegistry._bandcamp_check", return_value=("burial", "Burial", "Berlin")), \
+         patch("contracts.ProvenanceRegistry._soundcloud_check", return_value=("burial", 2000, True)), \
+         patch("contracts.ProvenanceRegistry._instagram_fetch", return_value=("burial", "Burial", "music by Burial")), \
          patch("contracts.ProvenanceRegistry._lastfm_scrobbles", return_value=500), \
          patch("contracts.ProvenanceRegistry._wallet_age_days", return_value=200), \
-         patch("contracts.ProvenanceRegistry._ens_data", return_value=("skeemask.eth", True)), \
-         patch("contracts.ProvenanceRegistry._farcaster_fname", return_value="skeemask"), \
+         patch("contracts.ProvenanceRegistry._ens_data", return_value=("burial.eth", True)), \
+         patch("contracts.ProvenanceRegistry._farcaster_fname", return_value="burial"), \
          patch("contracts.ProvenanceRegistry._llm_qualitative_adjustment", return_value=3), \
          patch("contracts.ProvenanceRegistry._verify_claimed_source", return_value=True), \
          patch.object(contract, "_sender", return_value=artist_wallet), \
@@ -440,15 +440,15 @@ def test_register_artist_verified_when_score_reaches_70(
         # Two matching claimed sources (+15) → 68 + 15 + 3 = 86 ≥ 70 under
         # strict mode.
         result = contract.register_artist(
-            did="did:web:skee.mask",
-            name="Skee Mask",
+            did="did:web:burial",
+            name="Burial",
             audio_hash=audio_hash,
             source_urls=source_urls,
             wallet=artist_wallet,
             verification_source_1="spotify_url",
             verification_handle_1="sp1",
             verification_source_2="bandcamp_url",
-            verification_handle_2="skeemask",
+            verification_handle_2="burial",
         )
     assert "Verified" in result
     assert artist_wallet in contract.artists
@@ -493,13 +493,13 @@ def test_strict_two_source_mode_caps_score_below_threshold(
              "id": "sp1", "verified": True, "followers": {"total": 5000}, "popularity": 45
          }), \
          patch("contracts.ProvenanceRegistry._apple_music_search", return_value=("ap1", True)), \
-         patch("contracts.ProvenanceRegistry._bandcamp_check", return_value=("skeemask", "Skee Mask", "Berlin")), \
-         patch("contracts.ProvenanceRegistry._soundcloud_check", return_value=("skeemask", 2000, True)), \
-         patch("contracts.ProvenanceRegistry._instagram_fetch", return_value=("skeemask", "Skee Mask", "music by Skee Mask")), \
+         patch("contracts.ProvenanceRegistry._bandcamp_check", return_value=("burial", "Burial", "Berlin")), \
+         patch("contracts.ProvenanceRegistry._soundcloud_check", return_value=("burial", 2000, True)), \
+         patch("contracts.ProvenanceRegistry._instagram_fetch", return_value=("burial", "Burial", "music by Burial")), \
          patch("contracts.ProvenanceRegistry._lastfm_scrobbles", return_value=500), \
          patch("contracts.ProvenanceRegistry._wallet_age_days", return_value=200), \
-         patch("contracts.ProvenanceRegistry._ens_data", return_value=("skeemask.eth", True)), \
-         patch("contracts.ProvenanceRegistry._farcaster_fname", return_value="skeemask"), \
+         patch("contracts.ProvenanceRegistry._ens_data", return_value=("burial.eth", True)), \
+         patch("contracts.ProvenanceRegistry._farcaster_fname", return_value="burial"), \
          patch("contracts.ProvenanceRegistry._llm_qualitative_adjustment", return_value=5), \
          patch.object(contract, "_sender", return_value=artist_wallet), \
          patch.object(contract, "_now", return_value=1000):
@@ -529,19 +529,19 @@ def test_relaxed_two_source_mode_allows_single_source(
              "id": "sp1", "verified": True, "followers": {"total": 5000}, "popularity": 45
          }), \
          patch("contracts.ProvenanceRegistry._apple_music_search", return_value=("ap1", True)), \
-         patch("contracts.ProvenanceRegistry._bandcamp_check", return_value=("skeemask", "Skee Mask", "Berlin")), \
-         patch("contracts.ProvenanceRegistry._soundcloud_check", return_value=("skeemask", 2000, True)), \
-         patch("contracts.ProvenanceRegistry._instagram_fetch", return_value=("skeemask", "Skee Mask", "music by Skee Mask")), \
+         patch("contracts.ProvenanceRegistry._bandcamp_check", return_value=("burial", "Burial", "Berlin")), \
+         patch("contracts.ProvenanceRegistry._soundcloud_check", return_value=("burial", 2000, True)), \
+         patch("contracts.ProvenanceRegistry._instagram_fetch", return_value=("burial", "Burial", "music by Burial")), \
          patch("contracts.ProvenanceRegistry._lastfm_scrobbles", return_value=500), \
          patch("contracts.ProvenanceRegistry._wallet_age_days", return_value=200), \
-         patch("contracts.ProvenanceRegistry._ens_data", return_value=("skeemask.eth", True)), \
-         patch("contracts.ProvenanceRegistry._farcaster_fname", return_value="skeemask"), \
+         patch("contracts.ProvenanceRegistry._ens_data", return_value=("burial.eth", True)), \
+         patch("contracts.ProvenanceRegistry._farcaster_fname", return_value="burial"), \
          patch("contracts.ProvenanceRegistry._llm_qualitative_adjustment", return_value=5), \
          patch.object(contract, "_sender", return_value=artist_wallet), \
          patch.object(contract, "_now", return_value=1000):
         result = contract.register_artist(
-            did="did:web:skee.mask",
-            name="Skee Mask",
+            did="did:web:burial",
+            name="Burial",
             audio_hash=audio_hash,
             source_urls=source_urls,
             wallet=artist_wallet,
@@ -700,7 +700,7 @@ def test_get_artist_verified(contract, artist_wallet):
     contract.artists[artist_wallet] = _make_artist(artist_wallet, score=85)
     result = contract.get_artist(artist_wallet)
     assert result["verified"] is True
-    assert result["name"] == "Skee Mask"
+    assert result["name"] == "Burial"
     assert result["score"] == 85
 
 
@@ -839,8 +839,8 @@ def test_disabled_collectors_are_not_called(contract, artist_wallet, audio_hash,
     with patch("contracts.ProvenanceRegistry._acoustid_lookup") as ac, \
          patch("contracts.ProvenanceRegistry._spotify_search") as sp, \
          patch("contracts.ProvenanceRegistry._apple_music_search", return_value=("ap1", True)), \
-         patch("contracts.ProvenanceRegistry._bandcamp_check", return_value=("skeemask", "Skee Mask", "Berlin")), \
-         patch("contracts.ProvenanceRegistry._soundcloud_check", return_value=("skeemask", 2000, True)), \
+         patch("contracts.ProvenanceRegistry._bandcamp_check", return_value=("burial", "Burial", "Berlin")), \
+         patch("contracts.ProvenanceRegistry._soundcloud_check", return_value=("burial", 2000, True)), \
          patch("contracts.ProvenanceRegistry._verify_claimed_source", return_value=True), \
          patch("contracts.ProvenanceRegistry._llm_qualitative_adjustment", return_value=0), \
          patch.object(contract, "_sender", return_value=artist_wallet), \
@@ -849,7 +849,7 @@ def test_disabled_collectors_are_not_called(contract, artist_wallet, audio_hash,
             did="did:web:flags.test", name="Flag Test", audio_hash=audio_hash,
             source_urls=source_urls, wallet=artist_wallet,
             verification_source_1="apple_music", verification_handle_1="ap1",
-            verification_source_2="bandcamp_url", verification_handle_2="skeemask",
+            verification_source_2="bandcamp_url", verification_handle_2="burial",
             require_two_source=False)
         ac.assert_not_called()
         sp.assert_not_called()
