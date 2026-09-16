@@ -1,0 +1,12 @@
+.vercel
+.env*
+# secrets: wallet keys & credentials (never commit)
+*.keystore
+*.pem
+*.key
+UTC--*.json
+keystore*/
+wallet*.json
+accounts*.json
+.secrets/
+keys.enc

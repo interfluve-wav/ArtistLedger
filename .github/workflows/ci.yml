@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: pytest (contract + validator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pytest-mock
+      # tests import `contracts.ProvenanceRegistry` (repo root on path) and
+      # the contract imports `genlayer` — stubbed in tests/stubs/genlayer
+      # (the VPS venv has the same hand-maintained stub installed).
+      - run: PYTHONPATH="$GITHUB_WORKSPACE:$GITHUB_WORKSPACE/tests/stubs" pytest tests/ -q
+
+  frontend:
+    name: frontend syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: node --check every frontend JS file
+        run: |
+          fail=0
+          for f in $(find frontend -name '*.js' -not -path 'frontend/lib/*'); do
+            node --check "$f" || fail=1
+          done
+          exit $fail
+      - name: frontend references deployed contract
+        run: grep -q "0xB110dA64B1c14B65c078430fd6Bd0f9E79d83981" frontend/app.js
+
+  secrets:
+    name: no key material in tree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check_no_keys.sh

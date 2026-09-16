@@ -1,0 +1,55 @@
+node_modules/
+.env
+.env.local
+.env.production
+__pycache__/
+*.pyc
+.DS_Store
+.vercel/
+artistledger.egg-info/
+.addresses
+.vercel
+.env*
+.last-deployed-sha
+
+# ── secrets: wallet keys & credentials (never commit) ──
+*.keystore
+*.pem
+*.key
+*.p12
+*.pfx
+*.keychain
+UTC--*.json
+keystore*/
+wallet*.json
+accounts*.json
+wallets*.json
+.secrets/
+secrets*/
+.private-keys/
+keys.enc
+id_rsa*
+id_ed25519*
+*.dsa
+*.ecdsa
+
+# ── environment / sensitive config (09-15: explicit additions) ──
+# keystore password lives OUTSIDE the repo at /root/.genlayer/ — never copy it in
+**/keystore-pass*
+*keystore-pass*
+**/*pass-provenance*
+*.password
+*password*.txt
+credentials*.json
+auth*.json
+token*.json
+*.token
+service-account*.json
+
+# deploy/CI local state
+*.log
+npm-debug.log*
+
+# test/validation outputs (large, regenerable)
+screenshots/photo-validation/
+demo/

@@ -1,0 +1,8 @@
+#!/bin/bash
+# pre-push hook — refuse to push if the tree contains key material.
+# Installed from scripts/ (see scripts/install_hooks.sh).
+SCRIPT="$(cd "$(dirname "$0")/../.." && pwd)/scripts/check_no_keys.sh"
+if [ -x "$SCRIPT" ]; then
+  exec "$SCRIPT"
+fi
+exit 0
