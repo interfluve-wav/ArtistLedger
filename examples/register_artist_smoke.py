@@ -38,12 +38,10 @@ os.chdir(ROOT)
 import find_artist as _fa_module  # noqa: E402
 
 DEFAULT_CONTRACT = os.environ.get(
-    "ARTISTLEDGER_CONTRACT", "0x4Da983553c0aafc16fD1Be26AcE5c0C2308EE760"
+    "ARTISTLEDGER_CONTRACT", "0xB110dA64B1c14B65c078430fd6Bd0f9E79d83981"
 )
 DEFAULT_AUDIO_HASH = "0x" + "11" * 32
-DEFAULT_DEPLOYER = os.environ.get(
-    "ARTISTLEDGER_DEPLOYER", "0xd3b809526bbd29f699b046e678190a777fd054a9"
-)
+DEFAULT_DEPLOYER = os.environ.get("ARTISTLEDGER_DEPLOYER", "")
 
 
 def build_call(name: str, artist_data: dict, audio_hash: str, deployer: str) -> dict:

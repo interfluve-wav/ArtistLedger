@@ -13,7 +13,7 @@ fail=0
 
 # helper: emit only paths that are NOT pruned dirs
 prune() {
-  find . \( -path ./.git -o -path ./node_modules -o -path ./.venv -o -path ./.hermes \) -prune -o "$@"
+  find . \( -path ./.git -o -path ./node_modules -o -path ./.venv \) -prune -o "$@"
 }
 
 file_contains_private_key() {

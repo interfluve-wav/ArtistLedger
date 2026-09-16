@@ -9,9 +9,9 @@ URL the artist has online.
 No paid APIs. No Spotify token. No Firecrawl. Just free public endpoints.
 
 Usage:
-    python3 find_artist.py --name "Skee Mask" --seed "https://open.spotify.com/artist/2qwi0hBvI2GrbkurOnw3hZ"
+    python3 find_artist.py --name "Burial" --seed "https://open.spotify.com/artist/0uCCBpmg6MrPb1KY2msceF"
     python3 find_artist.py --name "Burial" --seed "https://www.bandcamp.com/burial" --seed "https://www.discogs.com/artist/62418"
-    python3 find_artist.py --name "Skee Mask" --seed "..."  --json  # raw dict
+    python3 find_artist.py --name "Burial" --seed "..."  --json  # raw dict
 
 Why this design: MusicBrainz covers ~10% of working artists well (electronic,
 DJ, niche). Discogs covers ~70% (every major, every indie, every vinyl-era

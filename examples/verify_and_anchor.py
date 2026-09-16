@@ -4,7 +4,7 @@ End-to-end demo for OnChainProvenanceRegistry.
 Flow:
   1. Connect to GenLayer testnet
   2. Deploy ProvenanceRegistry
-  3. Register a real artist (Skee Mask) with 3 evidence URLs
+  3. Register a real artist (Burial) with 3 evidence URLs
   4. Anchor a real release
   5. Query is_verified_human -> True
   6. File a dispute with bogus evidence
@@ -19,19 +19,19 @@ import time
 
 from genlayer import Address, Client
 
-ARTIST_DID = "did:web:skee.mask"
-ARTIST_NAME = "Skee Mask"
+ARTIST_DID = "did:web:burial"
+ARTIST_NAME = "Burial"
 EVIDENCE_URLS = [
-    "https://musicbrainz.org/artist/Skee+Mask",
-    "https://ilian-tape.bandcamp.com/",
-    "https://www.residentadvisor.net/dj/skeemask",
+    "https://musicbrainz.org/artist/9ddce51c-2b75-4b3e-ac8c-1db09e7c89c6",
+    "https://music.apple.com/us/artist/burial/468355684",
+    "https://burial.bandcamp.com/",
 ]
 
 AUDIO_HASH = bytes.fromhex(
     "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
 )
-RELEASE_TITLE = "Compro"
-RELEASE_DATE = int(time.mktime((2024, 6, 14, 0, 0, 0, 0, 0, 0)))
+RELEASE_TITLE = "Untrue"
+RELEASE_DATE = int(time.mktime((2007, 11, 5, 0, 0, 0, 0, 0, 0)))
 
 
 def main() -> None:

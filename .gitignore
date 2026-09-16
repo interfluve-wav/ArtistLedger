@@ -34,7 +34,7 @@ id_ed25519*
 *.ecdsa
 
 # ── environment / sensitive config (09-15: explicit additions) ──
-# keystore password lives OUTSIDE the repo at /root/.genlayer/ — never copy it in
+# wallet keys live outside the repo — never commit them
 **/keystore-pass*
 *keystore-pass*
 **/*pass-provenance*
