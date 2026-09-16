@@ -1321,7 +1321,7 @@ def _profile_clusters_overlap(stored: dict, claimed: dict) -> bool:
     reverify() must re-prove control of a profile that was ALREADY part of
     the original verified evidence — otherwise an attacker could hijack a
     name by squatting the handle on a platform the victim never used
-    (e.g. youtube.com/@skeemask) and pasting their own fresh token there.
+    (e.g. youtube.com/@burial) and pasting their own fresh token there.
 
     A claimed proof channel counts ONLY if its handle matches the handle
     stored for the SAME platform in the original evidence:
