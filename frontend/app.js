@@ -1147,43 +1147,16 @@ function parseReceipt(receipt) {
 
 // ── Render the certificate (state B) ──────────────────────────────────
 function renderCertificate(data, receipt) {
-  // Two parallel views: the strict on-chain score (data.score) AND a
-  // friendlier "lenient" projection that flips to Verified when the
-  // artist is corroborated by at least one tier-1 source (AcoustID,
-  // Spotify, or Apple Music) + at least one tier-2 source (Bandcamp,
-  // SoundCloud, Instagram, Last.fm), OR two tier-1 sources agree on
-  // the name. The lenient view is what we use for the demo to the
-  // builder portal; the strict number is what the contract actually
-  // returned (we never fake it).
-  const e = data.evidence || {};
-  const tier1Confirmed = !!(e.acoustid_matched || e.spotify_artist_id || e.apple_music_artist_id);
-  const tier1Count = (e.acoustid_matched ? 1 : 0) + (e.spotify_artist_id ? 1 : 0) + (e.apple_music_artist_id ? 1 : 0);
-  // Count any tier-2 signal that was either confirmed by the leader or
-  // claimed by the user. lastfm may have 0 scrobbles but the handle is
-  // still evidence of online presence.
-  const tier2Count = (e.bandcamp_handle ? 1 : 0) + (e.soundcloud_handle ? 1 : 0) + (e.instagram_handle ? 1 : 0) + ((e.lastfm_scrobble_count !== undefined && e.lastfm_scrobble_count !== null) ? 1 : 0);
-  const llmBonus = Math.max(0, Number(e.press_narrative_score || 0));
-  // Lenient rubric — designed so a real artist with at least one tier-1
-  // + one tier-2 (or two tier-1) reliably clears the threshold of 60.
-  // This is NOT the deployed contract logic; it's a demo projection.
-  const friendly = Math.min(100,
-    (tier1Count >= 2 ? 55 : (tier1Count === 1 ? 35 : 0)) +  // tier-1 evidence
-    (tier2Count > 0 ? 20 : 0) +                              // tier-2 corroboration (any 1+)
-    (data.matchCount >= 2 ? 10 : 0) +                        // claimed sources also agree on the name
-    Math.min(llmBonus, 5) +                                  // LLM quality signal
-    5                                                          // baseline: artist has some online presence
-  );
-  const FRIENDLY_THRESHOLD = 60;
-  const friendlyOk = friendly >= FRIENDLY_THRESHOLD;
-  const ok = data.verdict === "VERIFIED" || friendlyOk;
+  // Finalized contract verdict is authoritative. Lenient projection is
+  // informational only — NOT VERIFIED can never produce a VRFD seal,
+  // verified label, or replacement score (see cert-authority.js).
+  const auth = (window.CertAuthority || CertAuthority).resolveCertificateDisplay(data);
+  const { friendly, friendlyWouldPass, tier1Count, tier2Count, llmBonus, ok } = auth;
+  const FRIENDLY_THRESHOLD = auth.FRIENDLY_THRESHOLD;
   $("cert-name").textContent = $("f-name").value.trim() || "—";
-  $("cert-subtitle").textContent = ok
-    ? friendlyOk && data.verdict !== "VERIFIED"
-      ? `verified (lenient ≥${FRIENDLY_THRESHOLD}) · ${tier1Count} tier-1, ${tier2Count} tier-2`
-      : `verified · ${data.matchCount} of 2 sources matched`
-    : `not verified · ${data.matchCount} of 2 sources matched`;
+  $("cert-subtitle").textContent = auth.subtitle;
   const seal = $("cert-seal");
-  seal.textContent = ok ? "VRFD" : "—";
+  seal.textContent = auth.seal;
   seal.className = "seal" + (ok ? " ok" : "");
   $("cert-wallet").textContent = walletAddr || "—";
   $("cert-wallet").title = walletAddr || "";
@@ -1192,9 +1165,8 @@ function renderCertificate(data, receipt) {
   $("cert-date").textContent = new Date().toISOString().slice(0, 16).replace("T", " · ") + " UTC";
   if (ok) fetchArtistPortrait($("f-name").value.trim() || "—");
   else $("cert-photo").style.display = "none";
-  // Show BOTH scores: strict (on-chain) for honesty + friendly (lenient)
-  // for the demo. The seal uses the friendlier verdict.
-  $("cert-score").textContent = `${data.score ?? "?"}/100 strict · ${friendly}/100 lenient · ${ok ? "VRFD" : "NOT VRFD"}`;
+  // Primary line shows on-chain score; lenient is labeled informational.
+  $("cert-score").textContent = auth.scoreLine;
   $("cert-two-meta").textContent = `${data.matchCount} / 2 matched`;
 
   // Source rows (only fill if user picked them)
@@ -1349,13 +1321,13 @@ function renderCertificate(data, receipt) {
   }
   $("cert-cross-meta").textContent = `${data.matched.length} signals observed`;
 
-  // Score + breakdown
-  $("cert-score-big").textContent = friendly;
-  $("live-score").textContent = friendly;
+  // Score + breakdown — primary score is on-chain (never replaced by lenient)
+  $("cert-score-big").textContent = auth.displayScore;
+  $("live-score").textContent = auth.displayScore;
   const badge = $("live-badge");
-  badge.textContent = ok ? (friendlyOk ? "VRFD (lenient)" : "VRFD") : data.verdict;
+  badge.textContent = auth.badge;
   badge.className = "badge " + (ok ? "ok" : "warn");
-  badge.title = `On-chain strict score: ${data.score}/100 (${data.verdict}). Friendly lenient projection: ${friendly}/100.`;
+  badge.title = `On-chain score: ${data.score}/100 (${data.verdict}). Lenient projection (info only): ${friendly}/100${friendlyWouldPass ? " would pass lenient ≥" + FRIENDLY_THRESHOLD : ""}.`;
 
   // Build a friendly breakdown of the score
   const bd = $("breakdown-rows");
@@ -1400,7 +1372,7 @@ function renderCertificate(data, receipt) {
     ["Lenient rubric: claimed-source agreement", data.matchCount >= 2 ? "+10" : "0"],
     ["Lenient rubric: LLM bonus (capped)", `+${Math.min(llmBonus, 5)}`],
     ["Lenient rubric: existence baseline", "+5"],
-    ["= friendly projection", `${friendly} / 100 ${friendlyOk ? "✓ VRFD (lenient)" : ""}`],
+    ["= lenient projection (info only)", `${friendly} / 100${friendlyWouldPass ? " (would clear lenient ≥" + FRIENDLY_THRESHOLD + ")" : ""}`],
   ];
   for (const [label, val] of lines) {
     const r = document.createElement("div");
@@ -1431,39 +1403,37 @@ function renderCertificate(data, receipt) {
     }
     bd.appendChild(r); bd.appendChild(v);
   }
-  // total
+  // total — on-chain score is authoritative; lenient never replaces it
   const tr = document.createElement("div");
-  tr.className = "lbl total"; tr.textContent = "= verification score";
+  tr.className = "lbl total"; tr.textContent = "= verification score (on-chain)";
   const tv = document.createElement("div");
-  tv.className = "val total"; tv.textContent = `${data.score ?? "—"} strict  ·  ${friendly} lenient`;
+  tv.className = "val total"; tv.textContent = `${data.score ?? "—"} on-chain  ·  ${friendly} lenient (info)`;
   bd.appendChild(tr); bd.appendChild(tv);
 
-  $("cert-hint").textContent = `consensus: ${receipt.result_name} · ${receipt.status_name} · tx ${receipt.hash.slice(0, 10)}… · lenient shows what Verified would look like under the friendlier rubric`;
+  $("cert-hint").textContent = `consensus: ${receipt.result_name} · ${receipt.status_name} · tx ${receipt.hash.slice(0, 10)}… · seal follows finalized on-chain verdict only`;
 }
 
 // ── Modal (state C) ───────────────────────────────────────────────────
 function renderModal(data, receipt) {
-  const e = data.evidence || {};
-  const tier1Count = (e.acoustid_matched ? 1 : 0) + (e.spotify_artist_id ? 1 : 0) + (e.apple_music_artist_id ? 1 : 0);
-  const tier2Count = (e.bandcamp_handle ? 1 : 0) + (e.soundcloud_handle ? 1 : 0) + (e.instagram_handle ? 1 : 0) + ((e.lastfm_scrobble_count !== undefined && e.lastfm_scrobble_count !== null) ? 1 : 0);
-  const llmBonus = Math.max(0, Number(e.press_narrative_score || 0));
-  const friendly = Math.min(100,
-    (tier1Count >= 2 ? 55 : (tier1Count === 1 ? 35 : 0)) +
-    (tier2Count > 0 ? 20 : 0) +
-    (data.matchCount >= 2 ? 10 : 0) +
-    Math.min(llmBonus, 5) +
-    5
-  );
-  const FRIENDLY_THRESHOLD = 60;
-  $("modal-sub").textContent = "· " + ($("f-name").value || "—") + " " + data.score + " strict / " + friendly + " lenient";
+  const auth = (window.CertAuthority || CertAuthority).resolveCertificateDisplay(data);
+  const { friendly, tier1Count, tier2Count, llmBonus, FRIENDLY_THRESHOLD } = auth;
+  $("modal-sub").textContent = "· " + ($("f-name").value || "—") + " " + data.score + " on-chain / " + friendly + " lenient (info)";
   $("modal-evidence").textContent = JSON.stringify({
     artist: { name: $("f-name").value.trim(), wallet: walletAddr },
     evidence: data.evidence,
     score: {
-      strict_on_chain: { total: data.score, verified: data.verdict === "VERIFIED", components: data.matched, threshold: 70 },
+      on_chain: {
+        total: data.score,
+        verified: data.verdict === "VERIFIED",
+        components: data.matched,
+        threshold: 70,
+        note: "Finalized contract verdict is authoritative for seal / verified label / primary score.",
+      },
       lenient_projection: {
         total: friendly,
-        verified: friendly >= FRIENDLY_THRESHOLD,
+        // Informational only — never presented as verified when on-chain says no
+        would_clear_lenient_threshold: friendly >= FRIENDLY_THRESHOLD,
+        presented_as_verified: data.verdict === "VERIFIED",
         threshold: FRIENDLY_THRESHOLD,
         rubric: {
           tier1_evidence: tier1Count >= 2 ? 55 : (tier1Count === 1 ? 35 : 0),
@@ -1472,7 +1442,7 @@ function renderModal(data, receipt) {
           llm_bonus_capped: Math.min(llmBonus, 5),
           existence_baseline: 5,
         },
-        note: "Lenient view is a demo projection — NOT the deployed contract logic. The strict_on_chain score above is what the contract actually returned.",
+        note: "Lenient view is informational only. NOT VERIFIED never produces VRFD / verified / a replacement score.",
       },
     },
   }, null, 2);
@@ -1600,10 +1570,9 @@ function fillDemoArtist(name) {
   // — but since the picker only takes 2, the leader will still query by name from the
   // leader's own side. The bonus handles (bandcamp/soundcloud/instagram/lastfm) live in
   // the calldata's sourceUrls dict, which the demo submit handler below injects.
-  // Verify banner note: with real public handles + the lenient demo
-  // rubric (≥60 = VRFD), a famous artist with at least one tier-1
-  // confirmation + a few tier-2 platforms should clear the seal.
-  $("verify-status").innerHTML = `<b>${name}</b> loaded — Apple Music + MusicBrainz prefilled. Strict mode is OFF for this demo so you see the real computed score. After submit the certificate shows BOTH the on-chain strict score AND a friendly lenient projection that flips to Verified when two independent platforms agree on the name. <a href="#" id="alsoBonus" style="color:var(--accent-ui);text-decoration:underline">Also include Bandcamp/SoundCloud/Instagram/Last.fm</a>.`;
+  // Verify banner note: certificate seal follows the finalized on-chain
+  // verdict only. Lenient projection is shown as secondary info.
+  $("verify-status").innerHTML = `<b>${name}</b> loaded — Apple Music + MusicBrainz prefilled. Strict mode is OFF for this demo so you see the real computed score. After submit the certificate seal follows the finalized on-chain verdict (NOT VERIFIED never shows VRFD); a lenient projection is shown as info only. <a href="#" id="alsoBonus" style="color:var(--accent-ui);text-decoration:underline">Also include Bandcamp/SoundCloud/Instagram/Last.fm</a>.`;
   document.getElementById("alsoBonus")?.addEventListener("click", (e) => {
     e.preventDefault();
     includeBonusHandles(d);

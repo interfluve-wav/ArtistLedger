@@ -10,6 +10,8 @@ step "1/4 pytest (contract + validator tests)"
 # venv python (system python3 has no pytest outside an activated venv)
 PYBIN="$(dirname "$0")/../.venv/bin/python"
 [ -x "$PYBIN" ] || PYBIN=python3
+# Match CI: stubs provide the off-chain genlayer stand-in
+export PYTHONPATH="$(pwd):$(pwd)/tests/stubs${PYTHONPATH:+:$PYTHONPATH}"
 "$PYBIN" -m pytest tests/ -q || FAIL=1
 
 step "2/4 frontend JS syntax"
