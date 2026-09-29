@@ -1353,7 +1353,14 @@
       if (chipVal) chipVal.textContent = 'VAL.CMT_4/4_ACCEPTED';
       if (chipValDot) chipValDot.className = 'dot-pulse green';
       if (chip2K) chip2K.textContent = 'Consensus';
-      if (chip2V) chip2V.textContent = details.score ? `${details.score}/100 VRFD` : 'MAJORITY_AGREED';
+      // Finalized verdict is authoritative — never label NOT VERIFIED as VRFD
+      if (chip2V) {
+        const v = String(details.verdict || '');
+        const verified = v === 'VERIFIED' || /^Verified/i.test(v);
+        chip2V.textContent = details.score != null
+          ? `${details.score}/100 ${verified ? 'VRFD' : 'NOT VRFD'}`
+          : (verified ? 'MAJORITY_AGREED' : 'NOT_VERIFIED');
+      }
       if (chipConsensus) chipConsensus.textContent = 'CONSENSUS_REACHED';
       if (chipConsensusDot) chipConsensusDot.className = 'dot-pulse green';
     } else if (m === 'error') {
@@ -1393,6 +1400,7 @@
 <script>window.WC_PROJECT_ID = "5953d382a796776994e0bd1774002f0c";</script>
 <script src="lib/walletconnect-bundle.js"></script>
 <script src="lib/genlayer-sdk.js"></script>
+<script src="cert-authority.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

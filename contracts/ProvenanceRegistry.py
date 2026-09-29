@@ -2,7 +2,7 @@
 
 # ruff: noqa: BLE001,S110
 """
-OnChainProvenanceRegistry — GenLayer Intelligent Contract v0.7.2
+OnChainProvenanceRegistry — GenLayer Intelligent Contract v0.7.3
 
 Tracks real-world music releases with provenance validated through
 deterministic cross-source verification + LLM qualitative adjustment.
@@ -28,6 +28,13 @@ proof on their own profile is real — the token is stronger evidence than
 a scraped catalog ID. The anti-phantom floor now accepts any verified
 ownership proof (before: every such artist hit MAJORITY_DISAGREE no
 matter how real, e.g. Interfluve).
+
+v0.7.3 — validators independently authenticate source + ownership-token
+facts that determine verification (registration and recovery). Fabricated
+leader evidence that claims false ownership proofs or inflated claimed-
+source matches is rejected. Certificate UI treats the finalized contract
+verdict as authoritative: NOT VERIFIED never produces VRFD / verified /
+a replacement score.
 
 Architecture:
   Phase 1 — Leader collects 13 structured evidence fields by hitting
@@ -985,6 +992,100 @@ def _token_in_text(text: str, token: str) -> bool:
     return token in text
 
 
+def _authenticate_ownership_proofs(
+    ownership_token: str,
+    ownership_proofs: dict,
+    lastfm_key,
+) -> dict:
+    """Independently fetch claimed profiles and authenticate ownership-token
+    presence. Used by both the leader collector and validators so the
+    facts that determine verification aren't leader-trusted.
+
+    Returns:
+      {
+        "proofs": {"soundcloud": bool, "lastfm": bool, "bandcamp": bool, "youtube": bool},
+        "lastfm_scrobbles": int,
+        "channels": int,          # count of True proofs
+        "token_present": bool,    # channels > 0
+      }
+    """
+    proofs = {"soundcloud": False, "lastfm": False, "bandcamp": False, "youtube": False}
+    lastfm_scrobbles = 0
+    op = ownership_proofs if isinstance(ownership_proofs, dict) else {}
+    if ownership_token and op:
+        if op.get("soundcloud"):
+            bio = _soundcloud_bio(_normalize_soundcloud(op["soundcloud"]))
+            proofs["soundcloud"] = _token_in_text(bio, ownership_token)
+        if op.get("lastfm"):
+            body, scrobbles = _lastfm_profile_and_scrobbles(op["lastfm"], lastfm_key)
+            lastfm_scrobbles = int(scrobbles)
+            proofs["lastfm"] = (
+                _token_in_text(body, ownership_token)
+                and lastfm_scrobbles >= LASTFM_SCROBBLE_FLOOR
+            )
+        if op.get("bandcamp"):
+            about = _bandcamp_about(_normalize_bandcamp(op["bandcamp"]))
+            proofs["bandcamp"] = _token_in_text(about, ownership_token)
+        if op.get("youtube"):
+            desc = _youtube_description(op["youtube"])
+            proofs["youtube"] = _token_in_text(desc, ownership_token)
+    channels = sum(1 for v in proofs.values() if v)
+    return {
+        "proofs": proofs,
+        "lastfm_scrobbles": lastfm_scrobbles,
+        "channels": channels,
+        "token_present": channels > 0,
+    }
+
+
+def _count_claimed_source_matches(
+    name: str,
+    verification_source_1: str,
+    verification_handle_1: str,
+    verification_source_2: str,
+    verification_handle_2: str,
+    spotify_token: str,
+    lastfm_key,
+) -> int:
+    """Independently authenticate claimed verification sources.
+
+    Re-runs `_verify_claimed_source` for each claimed pair so validators
+    do not trust the leader's `verification_match_count`.
+    """
+    match_total = 0
+    if verification_source_1 and verification_handle_1 and _verify_claimed_source(
+        verification_source_1, verification_handle_1, name,
+        spotify_token, lastfm_key,
+    ):
+        match_total += 1
+    if verification_source_2 and verification_handle_2 and _verify_claimed_source(
+        verification_source_2, verification_handle_2, name,
+        spotify_token, lastfm_key,
+    ):
+        match_total += 1
+    return match_total
+
+
+def _ownership_proofs_match_leader(leader_dict: dict, authenticated: dict) -> bool:
+    """True iff leader ownership-proof flags match independently authenticated facts."""
+    proofs = authenticated.get("proofs") or {}
+    for key, plat in (
+        ("ownership_proof_soundcloud", "soundcloud"),
+        ("ownership_proof_lastfm", "lastfm"),
+        ("ownership_proof_bandcamp", "bandcamp"),
+        ("ownership_proof_youtube", "youtube"),
+    ):
+        if bool(leader_dict.get(key)) != bool(proofs.get(plat)):
+            return False
+    # Last.fm scrobble count must agree when a lastfm proof is claimed
+    if proofs.get("lastfm") or leader_dict.get("ownership_proof_lastfm"):
+        if int(leader_dict.get("ownership_lastfm_scrobbles", 0) or 0) != int(
+            authenticated.get("lastfm_scrobbles", 0) or 0
+        ):
+            return False
+    return True
+
+
 def _soundcloud_bio(handle: str) -> str:
     """Fetch the profile HTML and extract the bio/description text.
 
@@ -1711,55 +1812,41 @@ class ProvenanceRegistry(gl.Contract):
             stored_evidence = {}
 
         def leader_prove() -> dict:
-            # Same collector helpers as registration: re-fetch each claimed
-            # profile, grep for the fresh token. Last.fm keeps the account
-            # maturity floor so a fresh sybil account can't be the proof.
+            # Independently authenticate ownership-token facts on each
+            # claimed profile (same helper validators re-run).
             lastfm_key = self.lastfm_key
             pool_keys = self._lastfm_pool_list()
             if pool_keys:
                 lastfm_key = pool_keys
-            op = ownership_proofs
-            proofs = {"soundcloud": False, "lastfm": False, "bandcamp": False, "youtube": False}
-            lastfm_scrobbles = 0
-            if op.get("soundcloud"):
-                bio = _soundcloud_bio(_normalize_soundcloud(op["soundcloud"]))
-                proofs["soundcloud"] = _token_in_text(bio, ownership_token)
-            if op.get("lastfm"):
-                body, scrobbles = _lastfm_profile_and_scrobbles(op["lastfm"], lastfm_key)
-                lastfm_scrobbles = int(scrobbles)
-                proofs["lastfm"] = (
-                    _token_in_text(body, ownership_token)
-                    and lastfm_scrobbles >= LASTFM_SCROBBLE_FLOOR
-                )
-            if op.get("bandcamp"):
-                about = _bandcamp_about(_normalize_bandcamp(op["bandcamp"]))
-                proofs["bandcamp"] = _token_in_text(about, ownership_token)
-            if op.get("youtube"):
-                desc = _youtube_description(op["youtube"])
-                proofs["youtube"] = _token_in_text(desc, ownership_token)
-            channels = sum(1 for v in proofs.values() if v)
+            auth = _authenticate_ownership_proofs(
+                ownership_token, ownership_proofs, lastfm_key
+            )
             return {
-                "proofs": proofs,
-                "channels": channels,
-                "token_present": channels > 0,
-                "profile_matches_stored": _profile_clusters_overlap(stored_evidence, op),
-                "lastfm_scrobbles": lastfm_scrobbles,
+                "proofs": auth["proofs"],
+                "channels": auth["channels"],
+                "token_present": auth["token_present"],
+                "profile_matches_stored": _profile_clusters_overlap(stored_evidence, ownership_proofs),
+                "lastfm_scrobbles": auth["lastfm_scrobbles"],
                 "name_overlap": _name_token_overlap(name, artist.name),
             }
 
         def validator_fn(leader_result) -> bool:
-            """Deterministic soundness of the recovery proof (no API re-fetch):
-              - well-formed dict with sane channel count equal to the flags
-              - token present on ≥1 channel
-              - proof profile matches the ORIGINAL evidence per-platform
-                (profile_matches_stored is recomputed here — it depends only
-                on tx args + chain state, so the leader isn't trusted for it)
-              - name overlap matches the recomputed value
-              - Last.fm maturity floor holds when a Last.fm proof is claimed
+            """Independently authenticate recovery ownership-token facts.
 
-            The only leader-trusted field is token presence itself (a live
-            profile re-fetch — the same 'verify determinism' trade-off the
-            registration path makes).
+            Validators re-fetch claimed profiles and confirm the ALVERIFY
+            token (same helper as the leader). They also recompute every
+            deterministic field (profile_matches_stored, name_overlap,
+            channel count) so fabricated leader evidence cannot migrate
+            an identity.
+
+            Reject iff:
+              - leader_result is not a well-formed Return dict
+              - channel count is insane or disagrees with proof flags
+              - token_present is false / disagrees with independent auth
+              - profile_matches_stored disagrees with recomputed overlap
+              - name_overlap disagrees with recomputed value
+              - Last.fm maturity floor fails when a lastfm proof is claimed
+              - independently authenticated proofs disagree with the leader
             """
             if not isinstance(leader_result, gl.vm.Return):
                 return False
@@ -1790,6 +1877,26 @@ class ProvenanceRegistry(gl.Contract):
                 if proofs.get("lastfm") and int(
                     d.get("lastfm_scrobbles", 0) or 0
                 ) < LASTFM_SCROBBLE_FLOOR:
+                    return False
+
+                # Independent ownership-token authentication (v0.7.3)
+                lastfm_key = self.lastfm_key
+                pool_keys = self._lastfm_pool_list()
+                if pool_keys:
+                    lastfm_key = pool_keys
+                auth = _authenticate_ownership_proofs(
+                    ownership_token, ownership_proofs, lastfm_key
+                )
+                if bool(d.get("token_present")) != bool(auth["token_present"]):
+                    return False
+                if int(d.get("channels", 0) or 0) != int(auth["channels"]):
+                    return False
+                for plat in ("soundcloud", "lastfm", "bandcamp", "youtube"):
+                    if bool(proofs.get(plat)) != bool(auth["proofs"].get(plat)):
+                        return False
+                if proofs.get("lastfm") and int(
+                    d.get("lastfm_scrobbles", 0) or 0
+                ) != int(auth.get("lastfm_scrobbles", 0) or 0):
                     return False
                 return True
             except Exception:
@@ -1985,42 +2092,26 @@ class ProvenanceRegistry(gl.Contract):
             ev.verification_handle_1 = verification_handle_1
             ev.verification_source_2 = verification_source_2
             ev.verification_handle_2 = verification_handle_2
-            match_total = 0
-            if verification_source_1 and verification_handle_1 and _verify_claimed_source(
-                verification_source_1, verification_handle_1, name,
+            match_total = _count_claimed_source_matches(
+                name,
+                verification_source_1, verification_handle_1,
+                verification_source_2, verification_handle_2,
                 spotify_token, lastfm_key,
-            ):
-                match_total += 1
-            if verification_source_2 and verification_handle_2 and _verify_claimed_source(
-                verification_source_2, verification_handle_2, name,
-                spotify_token, lastfm_key,
-            ):
-                match_total += 1
+            )
             ev.verification_match_count = u256(match_total)
 
-            # Tier 2.6 — ownership proofs. The artist pasted an ALVERIFY
-            # token into profiles they control; the leader re-fetches each
-            # claimed profile and greps for the exact token. Last.fm adds
-            # an account-maturity floor (LIFETIME_SCROBBLE_FLOOR): a token
-            # on a fresh sybil account doesn't count.
+            # Tier 2.6 — ownership proofs. Independently authenticate the
+            # ALVERIFY token on each claimed profile (same helper validators
+            # re-run so leader flags can't be fabricated).
             if ownership_token and ownership_proofs:
-                op = ownership_proofs  # local alias for closure readability
-                if op.get("soundcloud"):
-                    bio = _soundcloud_bio(_normalize_soundcloud(op["soundcloud"]))
-                    ev.ownership_proof_soundcloud = _token_in_text(bio, ownership_token)
-                if op.get("lastfm"):
-                    body, scrobbles = _lastfm_profile_and_scrobbles(op["lastfm"], lastfm_key)
-                    ev.ownership_lastfm_scrobbles = u256(scrobbles)
-                    ev.ownership_proof_lastfm = (
-                        _token_in_text(body, ownership_token)
-                        and scrobbles >= LASTFM_SCROBBLE_FLOOR
-                    )
-                if op.get("bandcamp"):
-                    about = _bandcamp_about(_normalize_bandcamp(op["bandcamp"]))
-                    ev.ownership_proof_bandcamp = _token_in_text(about, ownership_token)
-                if op.get("youtube"):
-                    desc = _youtube_description(op["youtube"])
-                    ev.ownership_proof_youtube = _token_in_text(desc, ownership_token)
+                auth = _authenticate_ownership_proofs(
+                    ownership_token, ownership_proofs, lastfm_key
+                )
+                ev.ownership_proof_soundcloud = bool(auth["proofs"]["soundcloud"])
+                ev.ownership_proof_lastfm = bool(auth["proofs"]["lastfm"])
+                ev.ownership_proof_bandcamp = bool(auth["proofs"]["bandcamp"])
+                ev.ownership_proof_youtube = bool(auth["proofs"]["youtube"])
+                ev.ownership_lastfm_scrobbles = u256(int(auth["lastfm_scrobbles"]))
 
             # Tier 5
             ev.wallet_age_days = _wallet_age_days(wallet, etherscan_key)
@@ -2038,37 +2129,37 @@ class ProvenanceRegistry(gl.Contract):
             return ev
 
         def validator_fn(leader_result) -> bool:
-            """Validator checks that the leader's evidence is SOUND (well-formed,
-            internally plausible, not obviously fabricated).
+            """Validator independently authenticates the source and
+            ownership-token facts that determine verification.
 
             IMPORTANT: this does NOT decide whether the artist is verified.
             The threshold check (below this function, on the consensus_evidence
             score) is what gates verified/not-verified. The validator's job is
-            narrower: confirm the evidence is structured and plausible enough
-            that the score we compute from it is meaningful.
+            narrower: confirm the evidence is structured, plausible, AND that
+            the leader's ownership-proof flags and claimed-source match count
+            survive independent re-authentication (or reject fabricated
+            leader evidence).
 
-            Previous design: every validator independently re-ran all live
-            API calls (leader_collect) and compared re-derived scores. On
-            studionet the validators hit those same public APIs and drifted
-            (rate limits, timing) -> UNDETERMINED.
+            Previous design (v0.7.2): validators only ran plausibility guards
+            and trusted leader booleans for ownership proofs / match count.
 
-            New design (deterministic): validators do NOT re-fetch any API.
-            They parse the leader's evidence JSON, run plausibility guards,
-            recompute the score deterministically, and require at least one
-            tier-1 signal so an empty/phantom submission can't reach the
-            threshold check. This is the "verify determinism, don't replay
-            the world" pattern.
+            v0.7.3: validators independently re-fetch ownership profiles and
+            re-run claimed-source authentication so fabricated leader evidence
+            cannot reach a Verified / VRFD outcome.
 
             Reject iff:
               1. leader_result is not a valid Return with calldata JSON.
               2. The evidence dict doesn't parse or has the wrong shape.
               3. Any numeric field is out of its plausible range.
-              4. spotify_verified is set with zero followers (fabrication).
+              4. spotify_verified is set without a resolved artist id.
               5. bandcamp is in source_urls but bandcamp_handle is empty.
               6. The recomputed score is outside [0, 100].
-              7. No tier-1 signal is present (AcoustID match, Spotify artist
-                 id, Apple Music artist id, or any claimed source that
-                 resolved AND name-bound to the claimed artist).
+              7. No tier-1 signal is present (AcoustID / Spotify / Apple /
+                 or a confirmed ownership proof).
+              8. Leader ownership-proof flags disagree with independent
+                 re-authentication of the ownership token on claimed profiles.
+              9. Leader verification_match_count disagrees with independent
+                 re-authentication of claimed sources.
             """
             if not isinstance(leader_result, gl.vm.Return):
                 return False
@@ -2129,7 +2220,45 @@ class ProvenanceRegistry(gl.Contract):
                     or bool(leader_dict.get("ownership_proof_bandcamp"))
                     or bool(leader_dict.get("ownership_proof_youtube"))
                 )
-                return has_tier1
+                if not has_tier1:
+                    return False
+
+                # ── Independent authentication (v0.7.3) ────────────────────
+                # Re-authenticate ownership-token facts and claimed-source
+                # matches. Fabricated leader booleans that disagree with a
+                # live re-fetch are rejected.
+                lastfm_key = self.lastfm_key
+                pool_keys = self._lastfm_pool_list()
+                if pool_keys:
+                    lastfm_key = pool_keys
+                spotify_token = self.spotify_token
+                if not spotify_token:
+                    for pair in self._spotify_pool_list():
+                        spotify_token = _spotify_mint_token(pair[0], pair[1])
+                        if spotify_token:
+                            break
+                if not spotify_token and self.spotify_client_id and self.spotify_client_secret:
+                    spotify_token = _spotify_mint_token(
+                        self.spotify_client_id, self.spotify_client_secret
+                    )
+
+                if ownership_token and ownership_proofs:
+                    auth = _authenticate_ownership_proofs(
+                        ownership_token, ownership_proofs, lastfm_key
+                    )
+                    if not _ownership_proofs_match_leader(leader_dict, auth):
+                        return False
+
+                claimed_matches = _count_claimed_source_matches(
+                    name,
+                    verification_source_1, verification_handle_1,
+                    verification_source_2, verification_handle_2,
+                    spotify_token or "", lastfm_key,
+                )
+                if int(leader_dict.get("verification_match_count", 0) or 0) != claimed_matches:
+                    return False
+
+                return True
             except Exception:
                 return False
 

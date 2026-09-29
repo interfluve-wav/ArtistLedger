@@ -13,7 +13,7 @@
 <p align="center">
   <a href="https://artistledger-frontend.vercel.app/"><img src="https://img.shields.io/badge/live%20demo-vercel-000?style=flat-square&logo=vercel" alt="Live demo"/></a>
   <a href="https://explorer-studio.genlayer.com/address/0xB110dA64B1c14B65c078430fd6Bd0f9E79d83981"><img src="https://img.shields.io/badge/contract-studionet-60a5fa?style=flat-square" alt="Contract on studionet"/></a>
-  <a href="https://github.com/interfluve-wav/ArtistLedger/actions"><img src="https://img.shields.io/badge/tests-174%20passed-34d399?style=flat-square" alt="174 tests"/></a>
+  <a href="https://github.com/interfluve-wav/ArtistLedger/actions"><img src="https://img.shields.io/badge/tests-188%20passed-34d399?style=flat-square" alt="188 tests"/></a>
   <img src="https://img.shields.io/badge/license-MIT-fbbf24?style=flat-square" alt="MIT"/>
 </p>
 
@@ -42,10 +42,12 @@ reads **8 free public APIs** and adjudicates the claim on-chain:
 | Etherscan | the claiming wallet's own on-chain footprint |
 
 **The flow.** The leader runs the API checks plus an LLM press-narrative
-judge; validators deterministically re-derive the score from the evidence
-(no live re-fetch — consensus can't drift on rate limits). The verdict
-lands as a **VRFD certificate** with an honest dual score: the strict
-on-chain score *and* a lenient projection, side by side. Nothing faked.
+judge; validators independently authenticate ownership-token and claimed-
+source facts, then deterministically re-derive the score. The finalized
+contract verdict is authoritative for the certificate: **VRFD** only when
+on-chain says Verified — a NOT VERIFIED result never produces a VRFD seal,
+verified label, or replacement score. A lenient projection may appear as
+secondary info only.
 
 **Proof tokens (ALVERIFY).** Paste a token into the artist's own bio —
 it becomes the strongest signal (+25 each). The token is derived from the
@@ -88,7 +90,7 @@ Explorer: https://explorer-studio.genlayer.com/address/0xB110dA64B1c14B65c078430
 ```
 contracts/ProvenanceRegistry.py   the Intelligent Contract (GENVM Python)
 frontend/                         the web app (vanilla JS, zero build step)
-tests/                            174 tests: scoring, validators, reverify
+tests/                            scoring, validators, reverify, certificate authority
 examples/                         API lookup + smoke-test scripts
 scripts/ci_local.sh               run the whole local gate (lint + tests)
 ```
@@ -99,7 +101,7 @@ scripts/ci_local.sh               run the whole local gate (lint + tests)
 # contract tests
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
-pytest -q          # 174 passed
+pytest -q          # contract + UI authority tests
 
 # frontend (any static server works — it talks to the RPC directly)
 cd frontend && python3 -m http.server 8000

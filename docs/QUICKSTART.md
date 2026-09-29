@@ -61,12 +61,14 @@ npx vercel deploy --prod --yes
 
 1. Leader collects evidence from 8 free public APIs + an LLM
    press-narrative judge.
-2. Validators deterministically re-derive the score from the same
-   evidence — no live re-fetch, so consensus can't drift on rate
-   limits.
-3. Majority agreement → the certificate flips to **VRFD** (lenient
-   ≥ 60) with an honest dual score (strict on-chain + lenient
-   projection).
+2. Validators independently authenticate ownership-token and claimed-
+   source facts (re-fetch profiles / re-run source checks), then
+   deterministically re-derive the score — fabricated leader evidence
+   is rejected at consensus.
+3. Majority agreement → if the on-chain score clears 70 the certificate
+   seal flips to **VRFD**. A NOT VERIFIED result never produces a VRFD
+   seal, verified label, or replacement score (lenient projection is
+   info-only).
 4. **Inspect** shows the raw evidence JSON, the exact `register_artist`
    calldata, and the validator consensus (`MAJORITY_AGREE`,
    `FINALIZED`).
@@ -75,8 +77,8 @@ npx vercel deploy --prod --yes
 
 - **Connect popup doesn't appear** — you visited before; clear site
   data for the domain or open in a private window.
-- **Consensus takes 30-60s** — normal; 4 validators re-derive the
-  score on-chain.
+- **Consensus takes 30-60s** — normal; 4 validators re-authenticate
+  ownership/source facts and re-derive the score on-chain.
 - **Strict score low (20-31)** — by design: without an AcoustID
   fingerprint in `audio_hash` the strict rubric caps at tier-1
-  sources; the lenient projection overlays this honestly.
+  sources; the certificate still follows the on-chain verdict.
