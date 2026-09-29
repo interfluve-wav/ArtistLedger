@@ -1481,6 +1481,106 @@ function setActive(s) {
   if (s === "C") stepC.classList.add("active");
 }
 
+/** Wipe certificate / score UI back to placeholders so a prior run
+ *  can't linger after reset. */
+function clearCertificateUi() {
+  lastData = null;
+  lastReceipt = null;
+
+  const textIds = {
+    "cert-name": "—",
+    "cert-subtitle": "verification status pending",
+    "cert-wallet": "—",
+    "cert-handle": "—",
+    "cert-date": "—",
+    "cert-score": "—",
+    "cert-two-meta": "0 / 2 matched",
+    "cert-cross-meta": "—",
+    "cert-score-big": "—",
+    "cert-hint": "live verification — score computed from the resolved sources above",
+    "live-score": "—",
+    "s1-handle": "—",
+    "s1-verdict": "—",
+    "s1-raw": "",
+    "s2-handle": "—",
+    "s2-verdict": "—",
+    "s2-raw": "",
+  };
+  for (const [id, val] of Object.entries(textIds)) {
+    const el = $(id);
+    if (el) el.textContent = val;
+  }
+
+  const seal = $("cert-seal");
+  if (seal) { seal.textContent = "—"; seal.className = "seal"; }
+
+  const badge = $("live-badge");
+  if (badge) { badge.textContent = "—"; badge.className = "badge"; badge.removeAttribute("title"); }
+
+  const photo = $("cert-photo");
+  if (photo) photo.style.display = "none";
+  const img = $("cert-photo-img");
+  if (img) { img.removeAttribute("src"); img.style.display = "none"; }
+
+  for (const id of ["cross-rows", "breakdown-rows"]) {
+    const el = $(id);
+    if (el) el.innerHTML = "";
+  }
+  for (const id of ["cert-src1", "cert-src2"]) {
+    const el = $(id);
+    if (el) {
+      el.style.display = "";
+      el.open = false;
+    }
+  }
+
+  if ($("modal-sub")) $("modal-sub").textContent = "";
+  for (const id of ["modal-evidence", "modal-calldata", "modal-validator", "modal-logs"]) {
+    const el = $(id);
+    if (el) el.textContent = "";
+  }
+  if ($("s1-raw")) $("s1-raw").textContent = "{}";
+  if ($("s2-raw")) $("s2-raw").textContent = "{}";
+  modalEl.classList.remove("open");
+}
+
+/** Full reset: back to register module with a clean slate (no stale score). */
+function resetToRegister() {
+  clearCertificateUi();
+
+  // Form / picker
+  if ($("f-name")) $("f-name").value = "";
+  if ($("fStrict")) $("fStrict").checked = true;
+  picked.length = 0;
+  document.querySelectorAll("#srcPick button.on").forEach(b => b.classList.remove("on"));
+  document.querySelectorAll("#qsGrid .qs-chip.on").forEach(c => {
+    c.classList.remove("on");
+    c.setAttribute("aria-pressed", "false");
+  });
+  if (typeof renderPicked === "function") renderPicked();
+
+  const ownRows = $("own-rows");
+  if (ownRows) ownRows.innerHTML = "";
+
+  if ($("verify-status")) {
+    $("verify-status").textContent =
+      "Pick a quick-start artist (or type your own) + two sources, then submit. The leader checks public APIs, 4 validators vote, ~1–2 min. Verified = 70/100 — bio proofs (+25 each) and a second matching source are the fastest way there.";
+  }
+  if ($("loglines")) $("loglines").textContent = "";
+  const liveLogs = $("live-logs");
+  if (liveLogs) liveLogs.style.display = "none";
+
+  stepB.disabled = true;
+  stepC.disabled = true;
+
+  if (window.setAtmosphereMode) {
+    window.setAtmosphereMode(walletAddr ? "connected" : "idle", { wallet: walletAddr || "" });
+  }
+
+  go("A");
+  window.scrollTo(0, 0);
+}
+
 function go(state) {
   if (state === "A") {
     modalEl.classList.remove("open");
@@ -1513,8 +1613,8 @@ function maybeRenderModal() {
 }
 
 $("stepA").onclick = () => go("A");
-$("resetFlow").onclick = () => go("A");
-$("resetBtn").onclick = () => go("A");
+$("resetFlow").onclick = () => resetToRegister();
+$("resetBtn").onclick = () => resetToRegister();
 $("openModal").onclick = () => go("C");
 $("closeModal").onclick = () => { modalEl.classList.remove("open"); setActive("B"); };
 modalEl.onclick = (e) => { if (e.target === modalEl) { modalEl.classList.remove("open"); setActive("B"); } };
