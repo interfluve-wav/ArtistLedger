@@ -23,10 +23,29 @@ file_contains_private_key() {
 }
 
 # 1. Any file (tracked OR untracked) whose CONTENTS are a private key / keystore
+# NOTE: bash 3.2 (macOS /bin/bash) cannot parse `case … ;;` inside `$(…)`,
+# so use basename/suffix tests only — no case arms in this subshell.
 hits=$(prune -type f -print 2>/dev/null | while read -r f; do
-  case "$f" in
-    *.pem|*.key|*.keystore|*UTC--*.json|*.p12|*.pfx) file_contains_private_key "$f" && echo "$f" ;;
-  esac
+  base="${f##*/}"
+  interesting=0
+  # suffix checks
+  for suf in .pem .key .keystore .p12 .pfx; do
+    if [ "${base%"$suf"}" != "$base" ]; then
+      interesting=1
+      break
+    fi
+  done
+  # geth keystore naming: UTC--*.json
+  if [ "$interesting" -eq 0 ]; then
+    case_prefix="UTC--"
+    case_suffix=".json"
+    if [ "${base#"$case_prefix"}" != "$base" ] && [ "${base%"$case_suffix"}" != "$base" ]; then
+      interesting=1
+    fi
+  fi
+  if [ "$interesting" -eq 1 ] && file_contains_private_key "$f"; then
+    echo "$f"
+  fi
 done | head -20)
 if [ -n "$hits" ]; then
   echo "BLOCKED: private-key CONTENTS detected:"
